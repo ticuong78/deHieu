@@ -1,4 +1,5 @@
 import {
+  type BaseSecureClient,
   createSecureClient,
   AssetType,
   OrderSide,
@@ -390,7 +391,7 @@ const polyKey = (c: LiveTradingConfig['polymarket']) =>
     .digest('hex');
 
 /** Kết nối giữ sẵn (≤ 30 phút); tạo lỗi thì không giữ. Đổi key / ví → khóa khác → tạo mới. */
-export function cachedPolymarketClient(c: LiveTradingConfig['polymarket']) {
+function cachedPolymarketClient(c: LiveTradingConfig['polymarket']) {
   const key = polyKey(c);
   const hit = polyClients.get(key);
   if (hit && Date.now() - hit.at < POLY_CLIENT_TTL_MS) return hit.client;
@@ -400,6 +401,15 @@ export function cachedPolymarketClient(c: LiveTradingConfig['polymarket']) {
     if (polyClients.get(key)?.client === client) polyClients.delete(key);
   });
   return client;
+}
+/**
+ * Kết nối Polymarket giữ sẵn, kiểu công khai của SDK (BaseSecureClient) — để module khác (chuyển tiền)
+ * dùng lại mà không xuất kiểu suy luận của client (không đặt tên được khi build .d.ts).
+ */
+export function polymarketSecureClient(
+  c: LiveTradingConfig['polymarket'],
+): Promise<BaseSecureClient> {
+  return cachedPolymarketClient(c);
 }
 export function forgetPolymarketClient(c: LiveTradingConfig['polymarket']) {
   polyClients.delete(polyKey(c));
