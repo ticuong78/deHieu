@@ -193,9 +193,15 @@ export class EmpireCashier {
     profile: string,
     usd: number,
     address: string,
+    /** Nơi nhận bỏ qua khoản nạp dưới mức này: USDT thực gửi thấp hơn → không rút. */
+    minUsdt = 0,
   ): Promise<{ request: EmpireWithdrawRequest; withdrawal: EmpireWithdrawal }> {
     const rate = await this.rate(profile);
     const request = empireWithdrawRequest(rate, usd, address);
+    if (Number(request.crypto_amount) < minUsdt)
+      throw new Error(
+        `CSGOEMPIRE_WITHDRAW_BELOW_DEPOSIT_MIN: chỉ gửi được ${Number(request.crypto_amount).toFixed(4)} USDT < mức nạp tối thiểu ${minUsdt} của nơi nhận — không rút`,
+      );
     // phí rút (trang luôn hỏi trước khi rút): coin cent phí > 0 thì sàn trừ thêm — báo rõ thay vì rút
     const fee = ok(
       await this._api.call(

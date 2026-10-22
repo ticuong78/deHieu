@@ -133,6 +133,13 @@ describe('csgoempire: nạp / rút USDT Polygon', () => {
       /WITHDRAW_FEE/,
     );
     expect(calls.some((x) => x.body)).toBe(false);
+    // USDT thực gửi (≈ 4,99) dưới mức nạp tối thiểu nơi nhận → không tạo lệnh rút
+    fee.value = 0;
+    calls.length = 0;
+    await expect(c.withdraw('empire-1', 5, POLY_DEPOSIT, 5)).rejects.toThrow(
+      /BELOW_DEPOSIT_MIN/,
+    );
+    expect(calls.some((x) => x.body)).toBe(false);
   });
 });
 

@@ -48,12 +48,18 @@ export interface RebalanceGateway {
     recipient: string,
     onSubmitted: (ref: string | null) => Promise<void>,
   ): Promise<{ txHash: string | null }>;
-  /** Tạo lệnh rút USDT Polygon csgoempire về `address`. */
+  /**
+   * Tạo lệnh rút USDT Polygon csgoempire về `address`. Số USDT thực gửi (theo tỷ giá csgoempire) dưới
+   * `minUsdt` → ném lỗi TRƯỚC khi tạo lệnh rút.
+   */
   withdrawFromEmpire(
     empire: EmpireAccount,
     usd: number,
     address: string,
+    minUsdt: number,
   ): Promise<{ id: number; coinCents: number; usdt: number }>;
+  /** Mức nạp tối thiểu (USD) sàn đang công bố cho USDT Polygon; null = không tra được. */
+  depositMinimumUsd?(venue: TradingVenue): Promise<number | null>;
   empireWithdrawal(
     empire: EmpireAccount,
     id: number,
@@ -130,13 +136,16 @@ export interface RebalanceTransferStore {
 }
 
 /**
- * Mức nạp tối thiểu của nơi NHẬN (USD): Polymarket không xử lý khoản nạp dưới 2$ trên Polygon (tiền nằm
- * kẹt ở địa chỉ nạp); để dư cho phí / tỷ giá USDT → dùng 3$. csgoempire: chưa rõ mức tối thiểu, lấy cùng 3$.
+ * Mức nạp tối thiểu SÀN của nơi NHẬN (USD). Polymarket: trang nạp ghi "Min $3" cho USDT Polygon (API
+ * bridge ghi 2$) — khoản dưới mức không được xử lý, tiền nằm kẹt ở địa chỉ nạp. Lấy max(sàn này, mức API
+ * đang công bố) rồi cộng DEPOSIT_MIN_MARGIN để tỷ giá / làm tròn không kéo khoản thực nhận xuống dưới mức.
+ * csgoempire: chưa rõ mức tối thiểu, lấy cùng 3$.
  */
 export const MIN_DEPOSIT_USD: Record<TradingVenue, number> = {
   polymarket: 3,
   csgoempire: 3,
 };
+export const DEPOSIT_MIN_MARGIN = 0.1;
 
 const DAY = (t: number) => new Date(t).toISOString().slice(0, 10);
 const floor2 = (n: number) => Math.floor(n * 100 + 1e-9) / 100;
@@ -391,7 +400,12 @@ export class RebalanceExecutor {
       );
     // nơi nhận không xử lý khoản nạp quá nhỏ (Polymarket < 2$ → tiền kẹt ở địa chỉ nạp): nâng lên mức nạp
     // tối thiểu nếu bên chuyển còn đủ và vẫn vào thêm được lệnh, không thì KHÔNG chuyển
-    const depositMin = MIN_DEPOSIT_USD[plan.to];
+    const published = await this._gateway
+      .depositMinimumUsd?.(plan.to)
+      .catch(() => null);
+    const depositMin = floor2(
+      Math.max(MIN_DEPOSIT_USD[plan.to], published ?? 0) + DEPOSIT_MIN_MARGIN,
+    );
     if (amount < depositMin) {
       const spare =
         plan.from === 'polymarket' ? balances.polymarket : balances.csgoempire;
@@ -488,6 +502,7 @@ export class RebalanceExecutor {
         empire,
         amount,
         destination,
+        depositMin - DEPOSIT_MIN_MARGIN,
       );
       submitted = true;
       await update({ state: 'submitted', ref: `withdrawal:${w.id}` });

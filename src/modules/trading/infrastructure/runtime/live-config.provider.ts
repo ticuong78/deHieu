@@ -24,7 +24,10 @@ import { AesGcmSecretCipher } from '../../../../shared/infrastructure/trading/se
 import { SESSION_EXPIRED } from '../../../../shared/infrastructure/trading/empire-session.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { TraderRuntimeConfig } from '../../application/trader-config.js';
-import type { TradingAccount } from '../../domain/trading-account.js';
+import type {
+  TradingAccount,
+  TradingVenue,
+} from '../../domain/trading-account.js';
 import {
   AccountLock,
   accountResource,
@@ -491,17 +494,42 @@ export class LiveConfigProvider
     empire: EmpireAccount,
     usd: number,
     address: string,
+    minUsdt: number,
   ) {
     const r = await this.cashier().withdraw(
       empire.config.browserProfile,
       usd,
       address,
+      minUsdt,
     );
     return {
       id: r.withdrawal.id,
       coinCents: r.withdrawal.coinCents,
       usdt: Number(r.request.crypto_amount),
     };
+  }
+
+  /** Mức nạp tối thiểu Polymarket công bố cho USDT Polygon (bridge.polymarket.com/supported-assets). */
+  async depositMinimumUsd(venue: TradingVenue) {
+    if (venue !== 'polymarket') return null;
+    const r = await fetch('https://bridge.polymarket.com/supported-assets', {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as {
+      supportedAssets?: {
+        chainId?: string | number;
+        token?: { address?: string };
+        minCheckoutUsd?: number;
+      }[];
+    };
+    const a = (j.supportedAssets ?? []).find(
+      (x) =>
+        String(x.chainId) === '137' &&
+        x.token?.address?.toLowerCase() ===
+          '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
+    );
+    return typeof a?.minCheckoutUsd === 'number' ? a.minCheckoutUsd : null;
   }
 
   async polymarketCash(poly: PolyAccount) {

@@ -161,10 +161,12 @@ describe('tự chuyển tiền 35/65', () => {
     expect(r).toMatchObject({
       data: { state: 'completed', to: 'polymarket', amountUsd: 80 },
     });
+    // chặn ở csgoempire nếu USDT thực gửi < mức nạp tối thiểu Polymarket (3$)
     expect(gateway.withdrawFromEmpire).toHaveBeenCalledWith(
       expect.anything(),
       80,
       POLY_DEP,
+      3,
     );
   });
 
@@ -404,6 +406,32 @@ describe('tự chuyển tiền 35/65', () => {
       const r = await ex.run('p1', 'manual');
       expect((r as { data: { reason: string } }).data.reason).toMatch(
         /BELOW_DEPOSIT_MIN/,
+      );
+      expect(gateway.withdrawFromEmpire).not.toHaveBeenCalled();
+    });
+
+    it('đúng 3$ vẫn chưa đủ: phải ≥ mức tối thiểu + đệm 0,1$ (tỷ giá / làm tròn)', async () => {
+      // cần 3$ sang Polymarket, không biết tiền một lệnh → không nâng lên được → không chuyển
+      const { ex, gateway } = setup(
+        { csgoempire: 6.5, polymarket: 3.5 },
+        { minTransferUsd: 1 },
+      );
+      const r = await ex.run('p1', 'manual');
+      expect((r as { data: { reason: string } }).data.reason).toMatch(
+        /BELOW_DEPOSIT_MIN.*3\.10/,
+      );
+      expect(gateway.withdrawFromEmpire).not.toHaveBeenCalled();
+    });
+
+    it('Polymarket công bố mức cao hơn (5$) → dùng mức đó', async () => {
+      const { ex, gateway } = setup(
+        { csgoempire: 8, polymarket: 7 },
+        { minTransferUsd: 1 },
+        { depositMinimumUsd: () => Promise.resolve(5) },
+      );
+      const r = await ex.run('p1', 'manual');
+      expect((r as { data: { reason: string } }).data.reason).toMatch(
+        /BELOW_DEPOSIT_MIN.*5\.10/,
       );
       expect(gateway.withdrawFromEmpire).not.toHaveBeenCalled();
     });
