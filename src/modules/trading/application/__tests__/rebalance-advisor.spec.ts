@@ -122,4 +122,26 @@ describe('đề xuất cân bằng tiền khi lệnh hủy vì hết tiền', ()
     await advisor.trade(trade(25, 40, { empire: 20, poly: 30 }));
     expect(advisor.list()[0]).toMatchObject({ verdict: 'none', plan: null });
   });
+
+  it('cân theo lệnh đòi nhiều nhất gần đây ở mỗi bên: lệnh Polymarket rẻ không rút cạn Polymarket', async () => {
+    const { advisor } = setup();
+    // lệnh trước (khớp) cần Polymarket 4.9$
+    await advisor.trade(
+      trade(
+        10,
+        10,
+        { empire: 4.93, poly: 4.9 },
+        { status: 'filled', reason: null },
+      ),
+    );
+    // lệnh này Polymarket chỉ cần 0.87$ (cửa dưới, share rẻ); csgoempire thiếu
+    await advisor.trade(trade(0.5, 4.91, { empire: 4.93, poly: 0.87 }));
+    const [s] = advisor.list();
+    // tổng 5.41$ < một lệnh đầy đủ theo lệnh đòi nhiều nhất (4.93 + 4.9) → không chuyển
+    expect(s).toMatchObject({ verdict: 'insufficient', plan: null });
+    expect(advisor.unitFor('p1')).toMatchObject({
+      csgoempire: 4.93,
+      polymarket: 4.9,
+    });
+  });
 });

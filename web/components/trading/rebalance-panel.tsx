@@ -63,6 +63,9 @@ export function RebalancePanel() {
           <SuggestionCard
             key={s.profileId}
             s={s}
+            active={transfers.data?.transfers.find(
+              (t) => t.profileId === s.profileId && ACTIVE.includes(t.state),
+            )}
             onDone={() => {
               void reload();
               void transfers.reload();
@@ -74,7 +77,11 @@ export function RebalancePanel() {
   );
 }
 
-function SuggestionCard({ s, onDone }: { s: RebalanceSuggestion; onDone: () => void }) {
+/** Lượt chuyển đang chạy (chưa có kết quả cuối). */
+const ACTIVE: TransferState[] = ['planned', 'submitted', 'sent'];
+const txHash = (ref: string | null) => ref?.match(/0x[0-9a-fA-F]{64}/)?.[0] ?? null;
+
+function SuggestionCard({ s, active, onDone }: { s: RebalanceSuggestion; active?: RebalanceTransfer; onDone: () => void }) {
   const manage = useGuard('trading:manage');
   const mutate = useMutate();
   const [busy, setBusy] = useState(false);
@@ -140,10 +147,32 @@ function SuggestionCard({ s, onDone }: { s: RebalanceSuggestion; onDone: () => v
       {p && !s.helpsShortage ? (
         <p className="mb-2 text-caption text-warn">Chuyển theo tỉ lệ không bù được bên đang thiếu: cần nạp thêm hoặc giảm tiền theo hạng.</p>
       ) : null}
+      {active ? (
+        <p className="mb-2 flex flex-wrap items-center gap-2 text-caption text-muted-fg">
+          <Pill tone="info">{STATE[active.state].label}</Pill>
+          Đang chuyển {usd(active.amountUsd)} {active.from ? VENUE[active.from] : ''} → {active.to ? VENUE[active.to] : ''} (bắt đầu {time(active.createdAt)}). Đề xuất tự đóng khi tiền tới nơi.
+          {txHash(active.ref) ? (
+            <a
+              className="text-accent-text hover:underline"
+              href={`https://polygonscan.com/tx/${txHash(active.ref)}`}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Xem trên Polygonscan
+            </a>
+          ) : null}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         {p ? (
-          <Button size="sm" variant="primary" loading={running} disabledReason={manage} onClick={execute}>
-            Chuyển ngay
+          <Button
+            size="sm"
+            variant="primary"
+            loading={running || !!active}
+            disabledReason={active ? 'Đang có lượt chuyển cho profile này' : manage}
+            onClick={execute}
+          >
+            {active ? 'Đang chuyển…' : 'Chuyển ngay'}
           </Button>
         ) : null}
         <Button size="sm" variant="secondary" loading={busy} disabledReason={manage} onClick={done}>

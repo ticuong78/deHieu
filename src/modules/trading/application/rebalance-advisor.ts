@@ -58,6 +58,10 @@ export function isCashShortage(t: TradeAttempt): boolean {
   return t.mode === 'live' && code === 'INSUFFICIENT_CASH';
 }
 
+/** Cửa sổ lịch sử tiền một lệnh dùng để cân bằng. */
+const HISTORY_MS = 24 * 3_600_000;
+const HISTORY_MAX = 50;
+
 const VENUES: readonly TradingVenue[] = ['csgoempire', 'polymarket'];
 const NAME: Record<TradingVenue, string> = {
   csgoempire: 'csgoempire',
@@ -185,8 +189,16 @@ export function rebalanceSummary(
  */
 export class RebalanceAdvisor {
   private readonly _open = new Map<string, RebalanceSuggestion>();
-  /** Tiền một lệnh gần nhất mỗi profile (giữ cả sau khi đóng đề xuất, cho nút "Chuyển ngay"). */
-  private readonly _units = new Map<string, TradeUnit>();
+  /**
+   * Tiền mỗi lệnh thật gần đây của từng profile (24 giờ, tối đa 50 lệnh), lấy từ số Cash executor đọc lúc
+   * vào lệnh. Cân bằng theo lệnh ĐÒI NHIỀU NHẤT ở mỗi bên, không theo riêng lệnh vừa hủy: tiền một chân
+   * Polymarket đổi rất mạnh theo giá (kèo cửa dưới chỉ vài chục cent / share), tối ưu cho đúng một lệnh rẻ
+   * sẽ rút cạn bên kia rồi lệnh sau lại thiếu → chuyển qua chuyển lại.
+   */
+  private readonly _history = new Map<
+    string,
+    { readonly at: number; readonly unit: TradeUnit }[]
+  >();
   /** Nghe mỗi lần lệnh hủy vì hết tiền (vd tự chuyển tiền). */
   private readonly _listeners: ((profileId: string) => void)[] = [];
   /** Lần báo gần nhất của mỗi profile: lúc nào, với kế hoạch nào (để không báo lặp). */
@@ -212,6 +224,11 @@ export class RebalanceAdvisor {
 
   /** Gọi cho MỌI lệnh ghi về; chỉ xử lý lệnh thật hủy vì thiếu Cash. Không ném lỗi. */
   async trade(t: TradeAttempt): Promise<void> {
+    // mọi lệnh thật có số Cash (khớp, hủy…) đều ghi lại tiền một lệnh
+    if (t.mode === 'live') {
+      const unit = readCash(t)?.unit;
+      if (unit) this._remember(t.profileId, unit);
+    }
     if (!isCashShortage(t)) return;
     try {
       const cash = readCash(t);
@@ -219,7 +236,7 @@ export class RebalanceAdvisor {
       const now = this._now();
       const { plan, verdict, needUsd, decision } = decide(
         cash.balances,
-        cash.unit,
+        this.unitFor(t.profileId) ?? cash.unit,
         this._empireShare,
       );
       const prev = this._open.get(t.profileId);
@@ -264,7 +281,6 @@ export class RebalanceAdvisor {
         summary,
       };
       this._open.set(t.profileId, next);
-      if (cash.unit) this._units.set(t.profileId, cash.unit);
       for (const l of this._listeners) l(t.profileId);
       if (!notify) return;
       this._notified.set(t.profileId, { at: now, plan });
@@ -307,7 +323,29 @@ export class RebalanceAdvisor {
 
   /** Tiền một lệnh của lệnh hủy gần nhất (cho lượt tự chuyển). */
   unitFor(profileId: string): TradeUnit | null {
-    return this._units.get(profileId) ?? null;
+    const list = this._fresh(profileId);
+    if (!list.length) return null;
+    // mỗi bên theo lệnh đòi nhiều nhất; lệnh nhỏ nhất theo lệnh gần nhất (cấu hình hạng hiện tại)
+    return {
+      csgoempire: Math.max(...list.map((x) => x.unit.csgoempire)),
+      polymarket: Math.max(...list.map((x) => x.unit.polymarket)),
+      minFraction: list.at(-1)!.unit.minFraction,
+    };
+  }
+
+  private _fresh(profileId: string) {
+    const since = this._now() - HISTORY_MS;
+    const list = (this._history.get(profileId) ?? []).filter(
+      (x) => x.at >= since,
+    );
+    this._history.set(profileId, list);
+    return list;
+  }
+
+  private _remember(profileId: string, unit: TradeUnit) {
+    const list = this._fresh(profileId);
+    list.push({ at: this._now(), unit });
+    if (list.length > HISTORY_MAX) list.splice(0, list.length - HISTORY_MAX);
   }
 
   /** Đề xuất đang chờ, mới nhất trước. */

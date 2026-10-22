@@ -53,7 +53,7 @@ export interface RebalanceGateway {
     empire: EmpireAccount,
     usd: number,
     address: string,
-  ): Promise<{ id: number; coinCents: number }>;
+  ): Promise<{ id: number; coinCents: number; usdt: number }>;
   empireWithdrawal(
     empire: EmpireAccount,
     id: number,
@@ -61,6 +61,17 @@ export interface RebalanceGateway {
     state: 'pending' | 'confirmed' | 'failed';
     txHash: string | null;
   } | null>;
+  /** Cash (tiền giao dịch) Polymarket hiện tại, USD. */
+  polymarketCash(poly: PolyAccount): Promise<number>;
+  /**
+   * Trạng thái khoản nạp USDT tới địa chỉ nạp Polymarket (bridge.polymarket.com/status) có số tiền ≈ `usdt`
+   * từ mốc `sinceMs`: completed / failed / pending; null = không tra được hoặc chưa thấy.
+   */
+  polymarketDeposit(
+    depositAddress: string,
+    usdt: number,
+    sinceMs: number,
+  ): Promise<'completed' | 'failed' | 'pending' | null>;
   /** Lần nạp có mã giao dịch này đã được cộng vào số dư csgoempire chưa. */
   empireDepositCredited(
     empire: EmpireAccount,
@@ -117,6 +128,15 @@ export interface RebalanceTransferStore {
   cooldown(profileId: string, ms: number): Promise<void>;
   coolingDown(profileId: string): Promise<boolean>;
 }
+
+/**
+ * Mức nạp tối thiểu của nơi NHẬN (USD): Polymarket không xử lý khoản nạp dưới 2$ trên Polygon (tiền nằm
+ * kẹt ở địa chỉ nạp); để dư cho phí / tỷ giá USDT → dùng 3$. csgoempire: chưa rõ mức tối thiểu, lấy cùng 3$.
+ */
+export const MIN_DEPOSIT_USD: Record<TradingVenue, number> = {
+  polymarket: 3,
+  csgoempire: 3,
+};
 
 const DAY = (t: number) => new Date(t).toISOString().slice(0, 10);
 const floor2 = (n: number) => Math.floor(n * 100 + 1e-9) / 100;
@@ -363,14 +383,30 @@ export class RebalanceExecutor {
             ? `LIMIT_NO_GAIN: hạn mức chỉ cho chuyển ${usd(Math.max(0, amount))} (cần ${usd(plan.amountUsd)}) — không đủ vào thêm lệnh${usedToday > 0 ? `; hôm nay đã chuyển ${usd(usedToday)}` : ''}`
             : 'NO_GAIN: chuyển qua lại không vào thêm được lệnh nào',
         );
-      // dưới mức rút / gửi tối thiểu của sàn
-      if (amount < 1) return skip(`TOO_SMALL: ${usd(amount)} < 1$`);
     } else if (amount < settings.minTransferUsd)
       return skip(
         usedToday + settings.minTransferUsd > settings.maxPerDayUsd
           ? `DAILY_LIMIT: đã chuyển ${usd(usedToday)} hôm nay / tối đa ${usd(settings.maxPerDayUsd)}`
           : `TOO_SMALL: ${usd(amount)} < tối thiểu ${usd(settings.minTransferUsd)}`,
       );
+    // nơi nhận không xử lý khoản nạp quá nhỏ (Polymarket < 2$ → tiền kẹt ở địa chỉ nạp): nâng lên mức nạp
+    // tối thiểu nếu bên chuyển còn đủ và vẫn vào thêm được lệnh, không thì KHÔNG chuyển
+    const depositMin = MIN_DEPOSIT_USD[plan.to];
+    if (amount < depositMin) {
+      const spare =
+        plan.from === 'polymarket' ? balances.polymarket : balances.csgoempire;
+      const raised = floor2(Math.min(depositMin, cap, spare));
+      if (
+        raised + 1e-9 >= depositMin &&
+        !!unit &&
+        improves(balances, afterTransfer(balances, plan.from, raised), unit)
+      )
+        amount = raised;
+      else
+        return skip(
+          `BELOW_DEPOSIT_MIN: cần chuyển ${usd(amount)} nhưng ${NAME[plan.to]} không nhận khoản nạp dưới ${usd(depositMin)} (chuyển ${usd(depositMin)} thì ${spare < depositMin ? `${NAME[plan.from]} không đủ tiền` : cap < depositMin ? 'vượt hạn mức' : !unit ? 'lệch khỏi tỉ lệ 35/65' : 'không vào thêm được lệnh'}) — không chuyển`,
+        );
+    }
 
     // địa chỉ nhận: chỉ địa chỉ ĐÃ LƯU; chiều vào csgoempire đối chiếu thêm địa chỉ trang đang trả
     // chuyển RA khỏi Polymarket là giao dịch gasless: cần Relayer API Key của ví
@@ -475,9 +511,33 @@ export class RebalanceExecutor {
         });
       }
       if (seen.tx) await update({ ref: `withdrawal:${w.id} · ${seen.tx}` });
-      return ok
+      if (!ok)
+        return this._unconfirmed(update, `lệnh rút ${w.id} chưa xác nhận`);
+      // csgoempire đã gửi USDT on-chain; Polymarket còn phải đổi + cộng vào ví (bridge). Chỉ "Xong" khi
+      // Polymarket báo khoản nạp hoàn tất HOẶC Cash Polymarket tăng ≥ 90% số gửi.
+      await update({ state: 'sent' });
+      const baseline = balances.polymarket;
+      const status: { last: string | null } = { last: null };
+      const arrived = await this._poll(async () => {
+        const s = await this._gateway
+          .polymarketDeposit(destination, w.usdt, now - 60_000)
+          .catch(() => null);
+        status.last = s ?? status.last;
+        if (s === 'completed' || s === 'failed') return true;
+        const cash = await this._gateway.polymarketCash(poly);
+        return cash + 1e-9 >= baseline + 0.9 * amount;
+      });
+      if (status.last === 'failed')
+        return this._unconfirmed(
+          update,
+          `Polymarket báo khoản nạp ${w.usdt} USDT tới ${destination} THẤT BẠI (tx ${seen.tx ?? '—'}) — liên hệ hỗ trợ Polymarket`,
+        );
+      return arrived
         ? this._completed(update, profileId)
-        : this._unconfirmed(update, `lệnh rút ${w.id} chưa xác nhận`);
+        : this._unconfirmed(
+            update,
+            `csgoempire đã gửi (tx ${seen.tx ?? '—'}) nhưng chưa thấy tiền vào Polymarket — kiểm tra bridge.polymarket.com/status/${destination}`,
+          );
     } catch (e) {
       if (!submitted) {
         await this._store.addDaily(profileId, day, -amount);

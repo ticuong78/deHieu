@@ -67,7 +67,11 @@ function setup(
         return { txHash: '0xabc' };
       },
     ),
-    withdrawFromEmpire: vi.fn(() => Promise.resolve({ id: 7, coinCents: 100 })),
+    withdrawFromEmpire: vi.fn(() =>
+      Promise.resolve({ id: 7, coinCents: 100, usdt: 20 }),
+    ),
+    polymarketCash: vi.fn(() => Promise.resolve(1e6)),
+    polymarketDeposit: vi.fn(() => Promise.resolve('completed' as const)),
     empireWithdrawal: () =>
       Promise.resolve({ state: 'confirmed' as const, txHash: '0xdef' }),
     empireDepositCredited: () => Promise.resolve(true),
@@ -390,5 +394,63 @@ describe('tự chuyển tiền 35/65', () => {
     } finally {
       accounts[1] = { ...accounts[1]!, config: saved };
     }
+  });
+  describe('khoản nạp tối thiểu + xác nhận tiền đã vào Polymarket', () => {
+    it('cần chuyển dưới mức nạp tối thiểu của Polymarket (1,6$ < 3$) → không chuyển', async () => {
+      const { ex, gateway } = setup(
+        { csgoempire: 3, polymarket: 1 },
+        { minTransferUsd: 1 },
+      );
+      const r = await ex.run('p1', 'manual');
+      expect((r as { data: { reason: string } }).data.reason).toMatch(
+        /BELOW_DEPOSIT_MIN/,
+      );
+      expect(gateway.withdrawFromEmpire).not.toHaveBeenCalled();
+    });
+
+    it('csgoempire đã gửi nhưng Polymarket chưa nhận → KHÔNG báo xong, chặn', async () => {
+      const { ex } = setup(
+        { csgoempire: 150, polymarket: 50 },
+        {},
+        {
+          polymarketDeposit: () => Promise.resolve('pending' as const),
+          polymarketCash: () => Promise.resolve(50),
+        },
+      );
+      const r = await ex.run('p1', 'manual');
+      expect(r).toMatchObject({ data: { state: 'unconfirmed' } });
+      expect((r as { data: { reason: string } }).data.reason).toMatch(
+        /chưa thấy tiền vào Polymarket/,
+      );
+    });
+
+    it('Polymarket báo khoản nạp thất bại → chặn, báo liên hệ hỗ trợ', async () => {
+      const { ex } = setup(
+        { csgoempire: 150, polymarket: 50 },
+        {},
+        {
+          polymarketDeposit: () => Promise.resolve('failed' as const),
+          polymarketCash: () => Promise.resolve(50),
+        },
+      );
+      const r = await ex.run('p1', 'manual');
+      expect(r).toMatchObject({ data: { state: 'unconfirmed' } });
+      expect((r as { data: { reason: string } }).data.reason).toMatch(
+        /THẤT BẠI/,
+      );
+    });
+
+    it('bridge chưa trả trạng thái nhưng Cash Polymarket đã tăng → xong', async () => {
+      const { ex } = setup(
+        { csgoempire: 150, polymarket: 50 },
+        {},
+        {
+          polymarketDeposit: () => Promise.reject(new Error('HTTP 503')),
+          polymarketCash: () => Promise.resolve(129.5),
+        },
+      );
+      const r = await ex.run('p1', 'manual');
+      expect(r).toMatchObject({ data: { state: 'completed' } });
+    });
   });
 });

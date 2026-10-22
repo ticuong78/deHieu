@@ -601,7 +601,7 @@ Chuyển xong (tay hoặc tự động) bấm **Đã chuyển xong** để đón
 
 #### Tối ưu theo số lệnh vào được
 
-35/65 là tỉ lệ **mục tiêu**, không phải luật cứng. Lệnh bị hủy vì hết tiền cho biết **tiền một lệnh** ở mỗi bên (csgoempire = tiền cược, Polymarket = share × giá + phí) và **lệnh nhỏ nhất** (Tối thiểu của hạng ÷ tiền mục tiêu). Từ đó:
+35/65 là tỉ lệ **mục tiêu**, không phải luật cứng. Mỗi lệnh thật cho biết **tiền một lệnh** ở mỗi bên (csgoempire = tiền cược, Polymarket = share × giá + phí) và **lệnh nhỏ nhất** (Tối thiểu của hạng ÷ tiền mục tiêu). App tính theo lệnh **đòi nhiều nhất ở mỗi bên** trong các lệnh thật 24 giờ gần đây (tối đa 50 lệnh), không theo riêng lệnh vừa hủy: tiền chân Polymarket đổi rất mạnh theo giá (kèo cửa dưới chỉ vài chục cent / share), nếu tối ưu cho đúng một lệnh rẻ thì sẽ rút cạn Polymarket rồi lệnh sau lại thiếu, tiền bị chuyển qua chuyển lại. Lịch sử này nằm trong bộ nhớ app (khởi động lại thì bắt đầu từ lệnh kế tiếp). Từ đó:
 
 | Tình huống (vd lệnh cần 10$ csgoempire + 18$ Polymarket = 28$) | Làm gì |
 | --- | --- |
@@ -618,10 +618,10 @@ Chỉ chuyển khi số lệnh đầy đủ vào được **tăng**, hoặc từ
 Bật ở **Auto trade → Giới hạn chung → Tự chuyển tiền**: **Tắt** (mặc định, chỉ đề xuất) · **Chạy thử** (tính và ghi "sẽ chuyển X$" vào lịch sử, KHÔNG gửi tiền) · **Chuyển thật**. Mỗi lượt:
 
 1. Đọc số dư **mới** của hai tài khoản (không dùng số của lệnh vừa hủy), tính phần chênh về 35/65.
-2. Số tiền = min(phần chênh, **Tối đa mỗi lần**, phần còn lại của **Tối đa mỗi ngày**); dưới **Tối thiểu** thì bỏ qua.
+2. Số tiền = min(phần chênh, **Tối đa mỗi lần**, phần còn lại của **Tối đa mỗi ngày**); dưới **Tối thiểu** thì bỏ qua. **Mức nạp tối thiểu của sàn nhận: 3$** (Polymarket không xử lý khoản nạp USDT Polygon dưới 2$ — tiền nằm kẹt ở địa chỉ nạp; app chừa thêm 1$ cho tỷ giá). Cần chuyển ít hơn: nâng lên 3$ nếu bên chuyển đủ tiền, trong hạn mức và vẫn vào thêm được lệnh; không thì không chuyển (`BELOW_DEPOSIT_MIN`). Nên đặt **Tối thiểu** ≥ 3$.
 3. Chuyển theo đúng cách trang hai sàn làm (lấy từ HAR):
    - **Polymarket → csgoempire**: một giao dịch gasless qua relayer Polymarket: đổi pUSD → USDC.e → USDT (báo giá Relay) gửi thẳng tới **địa chỉ nạp USDT Polygon của csgoempire**. Xong khi khoản nạp có đúng mã giao dịch đó được cộng vào csgoempire.
-   - **csgoempire → Polymarket**: tạo lệnh rút USDT (Polygon) trên csgoempire (qua Chrome nền của hồ sơ, như bấm Rút) về **địa chỉ nạp Polymarket**; Polymarket tự đổi USDT thành tiền giao dịch. Xong khi csgoempire báo lệnh rút đã xác nhận (có mã giao dịch). Sàn thu phí rút > 0 thì không tự rút.
+   - **csgoempire → Polymarket**: tạo lệnh rút USDT (Polygon) trên csgoempire (qua Chrome nền của hồ sơ, như bấm Rút) về **địa chỉ nạp Polymarket**; Polymarket tự đổi USDT thành tiền giao dịch. csgoempire báo lệnh rút đã xác nhận (có mã giao dịch) mới chỉ là *Đã gửi*: **Xong** khi Polymarket báo khoản nạp hoàn tất (bridge.polymarket.com/status/<địa chỉ nạp>) hoặc Cash Polymarket tăng ≥ 90% số gửi. Polymarket báo thất bại hoặc quá 30 phút chưa thấy tiền → *Chưa xác nhận*, chặn. Sàn thu phí rút > 0 thì không tự rút.
 4. Kết quả vào **Lịch sử chuyển** (cùng tab), sự kiện vận hành và push.
 
 Chốt an toàn:

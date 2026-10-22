@@ -497,7 +497,58 @@ export class LiveConfigProvider
       usd,
       address,
     );
-    return { id: r.withdrawal.id, coinCents: r.withdrawal.coinCents };
+    return {
+      id: r.withdrawal.id,
+      coinCents: r.withdrawal.coinCents,
+      usdt: Number(r.request.crypto_amount),
+    };
+  }
+
+  async polymarketCash(poly: PolyAccount) {
+    if (!poly.secretCipher) throw new Error('POLYMARKET_KEY_MISSING');
+    const r = await readPolymarketBalance(
+      polyExecution(poly.config, poly.secretCipher),
+      AbortSignal.timeout(60_000),
+    );
+    return r.cash;
+  }
+
+  /**
+   * Trạng thái khoản nạp USDT (Polygon) vào địa chỉ nạp Polymarket, theo API bridge công khai của Polymarket.
+   * Chỉ xét khoản cùng số tiền (±2%) tạo sau `sinceMs`. null = chưa thấy.
+   */
+  async polymarketDeposit(
+    depositAddress: string,
+    usdt: number,
+    sinceMs: number,
+  ) {
+    const r = await fetch(
+      `https://bridge.polymarket.com/status/${depositAddress}`,
+      { signal: AbortSignal.timeout(20_000) },
+    );
+    if (!r.ok)
+      throw new Error(`POLYMARKET_BRIDGE_STATUS_FAILED: HTTP ${r.status}`);
+    const j = (await r.json()) as {
+      transactions?: {
+        fromChainId?: string | number;
+        fromAmountBaseUnit?: string;
+        status?: string;
+        createdTimeMs?: number;
+      }[];
+    };
+    const want = usdt * 1e6;
+    const tx = (j.transactions ?? []).find((t) => {
+      const amt = Number(t.fromAmountBaseUnit);
+      return (
+        String(t.fromChainId) === '137' &&
+        Math.abs(amt - want) <= want * 0.02 &&
+        (t.createdTimeMs == null || t.createdTimeMs >= sinceMs)
+      );
+    });
+    if (!tx) return null;
+    if (tx.status === 'COMPLETED') return 'completed' as const;
+    if (tx.status === 'FAILED') return 'failed' as const;
+    return 'pending' as const;
   }
 
   async empireWithdrawal(empire: EmpireAccount, id: number) {
