@@ -96,6 +96,14 @@ const toAccount = (r: AccountRow): TradingAccount | null => {
         typeof c.funderAddress === 'string' ? c.funderAddress : null,
       usdtDepositAddress:
         typeof c.usdtDepositAddress === 'string' ? c.usdtDepositAddress : null,
+      relayerApiKeyAddress:
+        typeof c.relayerApiKeyAddress === 'string'
+          ? c.relayerApiKeyAddress
+          : null,
+      relayerApiKeyCipher:
+        typeof c.relayerApiKeyCipher === 'string'
+          ? c.relayerApiKeyCipher
+          : null,
     };
   else return null; // nền tảng không còn hỗ trợ: bỏ qua thay vì làm hỏng cả danh sách
   return {

@@ -1,6 +1,7 @@
 import {
   type BaseSecureClient,
   createSecureClient,
+  relayerApiKey,
   AssetType,
   OrderSide,
   OrderType,
@@ -361,11 +362,16 @@ export function polymarketSigner(c: LiveTradingConfig['polymarket']) {
   );
 }
 
-async function polymarketClient(c: LiveTradingConfig['polymarket']) {
+async function polymarketClient(
+  c: LiveTradingConfig['polymarket'],
+  relayer?: { key: string; address: string },
+) {
   const signer = polymarketSigner(c);
   const client = await createSecureClient({
     signer,
     wallet: c.funderAddress ?? c.walletAddress,
+    // giao dịch gasless (chuyển tiền) cần Relayer API Key; vào lệnh thì không
+    ...(relayer ? { apiKey: relayerApiKey(relayer) } : {}),
   });
   if (client.account.signer.toLowerCase() !== c.walletAddress.toLowerCase())
     throw new Error('POLYMARKET_WALLET_MISMATCH');
@@ -410,6 +416,16 @@ export function polymarketSecureClient(
   c: LiveTradingConfig['polymarket'],
 ): Promise<BaseSecureClient> {
   return cachedPolymarketClient(c);
+}
+/**
+ * Kết nối Polymarket CÓ Relayer API Key — chỉ để gửi giao dịch gasless (tự chuyển tiền). Tạo mới mỗi lần
+ * (hiếm khi dùng), không dùng chung với kết nối vào lệnh.
+ */
+export function polymarketRelayerClient(
+  c: LiveTradingConfig['polymarket'],
+  relayer: { key: string; address: string },
+): Promise<BaseSecureClient> {
+  return polymarketClient(c, relayer);
 }
 export function forgetPolymarketClient(c: LiveTradingConfig['polymarket']) {
   polyClients.delete(polyKey(c));

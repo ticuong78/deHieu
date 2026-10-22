@@ -76,10 +76,14 @@ const AccountBody = z.object({
         .transform((v) => v || null),
       /** Địa chỉ nạp USDT Polygon ở trang Deposit của Polymarket (tự rút csgoempire → Polymarket). */
       usdtDepositAddress: evmAddress.nullish().transform((v) => v || null),
+      /** "Signer Address" của Relayer API Key (polymarket.com → Settings → API Keys). */
+      relayerApiKeyAddress: evmAddress.nullish().transform((v) => v || null),
     }),
   ]),
   /** Chỉ polymarket. Bỏ trống khi sửa = giữ key cũ. Không bao giờ được trả lại. */
   privateKey: z.string().trim().max(200).optional(),
+  /** Chỉ polymarket: Relayer API Key (chuyển tiền gasless). Bỏ trống khi sửa = giữ key cũ. Không bao giờ được trả lại. */
+  relayerApiKey: z.string().trim().max(500).optional(),
 });
 
 const StakePlanBody = z.object({

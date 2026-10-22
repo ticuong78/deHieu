@@ -36,6 +36,13 @@ export interface PolymarketAccountConfig {
    * tiền giao dịch). Tự rút csgoempire → Polymarket chỉ rút về địa chỉ này. null = không tự chuyển chiều này.
    */
   readonly usdtDepositAddress?: string | null;
+  /**
+   * Relayer API Key của Polymarket (polymarket.com → Settings → API Keys → Relayer API Keys): bắt buộc để
+   * gửi giao dịch gasless (tự chuyển tiền RA khỏi ví). Address = "Signer Address" hiện khi tạo key.
+   * Key lưu MÃ HÓA ở relayerApiKeyCipher, không bao giờ trả về web.
+   */
+  readonly relayerApiKeyAddress?: string | null;
+  readonly relayerApiKeyCipher?: string | null;
 }
 
 export type TradingAccountConfig =
@@ -69,6 +76,12 @@ export function validateAccountConfig(c: TradingAccountConfig): string | null {
     return 'WALLET_ADDRESS_INVALID: dạng 0x + 40 ký tự hex';
   if (c.funderAddress !== null && !EVM_ADDRESS.test(c.funderAddress))
     return 'FUNDER_ADDRESS_INVALID: dạng 0x + 40 ký tự hex';
+  if (
+    c.relayerApiKeyAddress !== undefined &&
+    c.relayerApiKeyAddress !== null &&
+    !EVM_ADDRESS.test(c.relayerApiKeyAddress)
+  )
+    return 'RELAYER_ADDRESS_INVALID: Signer Address của Relayer API Key dạng 0x + 40 ký tự hex';
   const dep = c.usdtDepositAddress?.toLowerCase();
   if (
     dep &&

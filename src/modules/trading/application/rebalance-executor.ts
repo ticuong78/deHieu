@@ -373,6 +373,14 @@ export class RebalanceExecutor {
       );
 
     // địa chỉ nhận: chỉ địa chỉ ĐÃ LƯU; chiều vào csgoempire đối chiếu thêm địa chỉ trang đang trả
+    // chuyển RA khỏi Polymarket là giao dịch gasless: cần Relayer API Key của ví
+    if (
+      plan.from === 'polymarket' &&
+      (!poly.config.relayerApiKeyCipher || !poly.config.relayerApiKeyAddress)
+    )
+      return skip(
+        'NO_RELAYER_KEY: chưa lưu Relayer API Key (polymarket.com → Settings → API Keys → Relayer API Keys) cho ví Polymarket',
+      );
     let destination: string | null;
     if (plan.to === 'csgoempire') {
       destination = empire.config.usdtDepositAddress ?? null;

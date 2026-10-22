@@ -54,6 +54,8 @@ export interface AccountInput {
   readonly config: TradingAccountConfig;
   /** polymarket: private key. Bỏ trống khi sửa = giữ key cũ. */
   readonly privateKey?: string;
+  /** polymarket: Relayer API Key (chuyển tiền gasless). Bỏ trống khi sửa = giữ key cũ. */
+  readonly relayerApiKey?: string;
 }
 
 /** Tài khoản trả cho web: KHÔNG kèm bí mật, chỉ cho biết đã có hay chưa. */
@@ -64,6 +66,8 @@ export interface TradingAccountView {
   readonly enabled: boolean;
   readonly config: TradingAccountConfig;
   readonly hasSecret: boolean;
+  /** polymarket: đã lưu Relayer API Key (mã hóa) chưa. */
+  readonly hasRelayerKey: boolean;
   /** Profile đang dùng tài khoản này. */
   readonly usedBy: readonly string[];
 }
@@ -224,11 +228,30 @@ export class TradingAdmin {
       secretCipher = this._cipher.encrypt(key);
     }
 
+    let config = input.config;
+    if (config.venue === 'polymarket') {
+      // Relayer API Key: mã hóa như private key; bỏ trống = giữ key cũ
+      const oldCipher =
+        old?.config.venue === 'polymarket'
+          ? (old.config.relayerApiKeyCipher ?? null)
+          : null;
+      let relayerApiKeyCipher = oldCipher;
+      const rawRelayer = input.relayerApiKey?.trim();
+      if (rawRelayer) {
+        if (rawRelayer.length > 500) return fail('RELAYER_KEY_INVALID');
+        if (!this._cipher.available())
+          return fail(
+            'SECRET_KEY_MISSING: chưa đặt TRADING_SECRET_KEY nên không lưu được Relayer API Key',
+          );
+        relayerApiKeyCipher = this._cipher.encrypt(rawRelayer);
+      }
+      config = { ...config, relayerApiKeyCipher };
+    }
     const account: TradingAccount = {
       id: id ?? randomUUID(),
       label,
       enabled: input.enabled,
-      config: input.config,
+      config,
       secretCipher,
     };
     await this._accounts.save(account);
@@ -459,8 +482,14 @@ export class TradingAdmin {
       venue: a.config.venue,
       label: a.label,
       enabled: a.enabled,
-      config: a.config,
+      // bỏ bí mật mã hóa khỏi cấu hình trả web
+      config:
+        a.config.venue === 'polymarket'
+          ? (({ relayerApiKeyCipher: _c, ...rest }) => rest)(a.config)
+          : a.config,
       hasSecret: a.secretCipher !== null,
+      hasRelayerKey:
+        a.config.venue === 'polymarket' && !!a.config.relayerApiKeyCipher,
       usedBy: profiles
         .filter(
           (p) =>

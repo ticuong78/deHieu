@@ -16,6 +16,8 @@ export type TradingAccountConfig =
       funderAddress: string | null;
       /** Địa chỉ nạp USDT Polygon ở trang Deposit của Polymarket (tự rút csgoempire → Polymarket). */
       usdtDepositAddress?: string | null;
+      /** "Signer Address" của Relayer API Key (chuyển tiền gasless). */
+      relayerApiKeyAddress?: string | null;
     };
 
 export interface TradingAccountView {
@@ -24,6 +26,8 @@ export interface TradingAccountView {
   label: string;
   enabled: boolean;
   config: TradingAccountConfig;
+  /** polymarket: đã lưu Relayer API Key (mã hóa) chưa. */
+  hasRelayerKey?: boolean;
   /** Đã lưu private key (mã hóa) hay chưa. Key không bao giờ được trả về. */
   hasSecret: boolean;
   usedBy: string[];

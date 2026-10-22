@@ -37,6 +37,8 @@ const accounts: TradingAccount[] = [
       walletAddress: '0x0000000000000000000000000000000000000001',
       funderAddress: null,
       usdtDepositAddress: POLY_DEP,
+      relayerApiKeyAddress: '0x0000000000000000000000000000000000000002',
+      relayerApiKeyCipher: 'enc',
     },
   },
 ];
@@ -370,5 +372,23 @@ describe('tự chuyển tiền 35/65', () => {
         (r as { data: { amountUsd: number } }).data.amountUsd,
       ).toBeGreaterThanOrEqual(2);
     });
+  });
+
+  it('chưa có Relayer API Key → không chuyển ra khỏi Polymarket (báo cách lấy key)', async () => {
+    const saved = accounts[1]!.config;
+    accounts[1] = {
+      ...accounts[1]!,
+      config: { ...saved, relayerApiKeyCipher: null } as never,
+    };
+    try {
+      const { ex, gateway } = setup({ csgoempire: 10, polymarket: 390 });
+      const r = await ex.run('p1', 'manual');
+      expect((r as { data: { reason: string } }).data.reason).toMatch(
+        /NO_RELAYER_KEY/,
+      );
+      expect(gateway.sendFromPolymarket).not.toHaveBeenCalled();
+    } finally {
+      accounts[1] = { ...accounts[1]!, config: saved };
+    }
   });
 });

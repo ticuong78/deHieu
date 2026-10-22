@@ -279,6 +279,8 @@ function AccountForm({
   const [walletAddress, setWalletAddress] = useState('');
   const [funderAddress, setFunderAddress] = useState('');
   const [depositAddress, setDepositAddress] = useState('');
+  const [relayerKey, setRelayerKey] = useState('');
+  const [relayerAddress, setRelayerAddress] = useState('');
   const [fetchingDeposit, setFetchingDeposit] = useState(false);
   const [privateKey, setPrivateKey] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
@@ -306,6 +308,10 @@ function AccountForm({
       e?.config.venue === 'polymarket' ? (e.config.funderAddress ?? '') : '',
     );
     setDepositAddress(e?.config.usdtDepositAddress ?? '');
+    setRelayerKey('');
+    setRelayerAddress(
+      e?.config.venue === 'polymarket' ? (e.config.relayerApiKeyAddress ?? '') : '',
+    );
     setPrivateKey('');
     setLoginUsername('');
     setLoginPassword('');
@@ -335,6 +341,12 @@ function AccountForm({
           )
         ? 'Đây là ví ký / ví proxy, không phải địa chỉ nạp. Lấy địa chỉ ở Polymarket → Deposit → Crypto → USDT (Polygon).'
         : undefined;
+  const relayerErr =
+    relayerAddress.trim() && !evm(relayerAddress)
+      ? 'Cần 0x + 40 ký tự hex, hoặc để trống.'
+      : relayerKey.trim() && !relayerAddress.trim()
+        ? 'Nhập cả Signer Address hiện cùng key.'
+        : undefined;
   const fetchEmpireDeposit = async () => {
     if (!editing) return;
     setFetchingDeposit(true);
@@ -357,6 +369,7 @@ function AccountForm({
         (!!loginPassword && secretKeyConfigured === false) ||
         !!depositErr
       : !!depositErr ||
+        !!relayerErr ||
         !evm(walletAddress) ||
         (!!funderAddress.trim() && !evm(funderAddress)) ||
         !keyOk);
@@ -374,6 +387,7 @@ function AccountForm({
             walletAddress: addr(walletAddress),
             funderAddress: funderAddress.trim() ? addr(funderAddress) : null,
             usdtDepositAddress: depositAddress.trim() ? addr(depositAddress) : null,
+            relayerApiKeyAddress: relayerAddress.trim() ? addr(relayerAddress) : null,
           };
     setBusy(true);
     const r = await mutate(
@@ -389,6 +403,9 @@ function AccountForm({
           config,
           ...(venue === 'polymarket' && privateKey.trim()
             ? { privateKey: privateKey.trim() }
+            : {}),
+          ...(venue === 'polymarket' && relayerKey.trim()
+            ? { relayerApiKey: relayerKey.trim() }
             : {}),
           ...(venue === 'csgoempire' && loginUsername.trim() && loginPassword
             ? { loginUsername: loginUsername.trim(), loginPassword }
@@ -525,6 +542,11 @@ function AccountForm({
               <div className="flex gap-2">
                 <Input
                   id="ac-deposit"
+                  name="usdt-deposit-address"
+                  autoComplete="off"
+                  spellCheck={false}
+                  data-1p-ignore
+                  data-lpignore="true"
                   className="num"
                   value={depositAddress}
                   onChange={(e) => setDepositAddress(e.target.value)}
@@ -580,9 +602,55 @@ function AccountForm({
             >
               <Input
                 id="ac-deposit"
+                name="usdt-deposit-address"
+                autoComplete="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
                 className="num"
                 value={depositAddress}
                 onChange={(e) => setDepositAddress(e.target.value)}
+                placeholder="0x…"
+              />
+            </Field>
+            <Field
+              label="Relayer API Key (tự chuyển tiền)"
+              htmlFor="ac-relayer-key"
+              help={
+                editing?.hasRelayerKey
+                  ? 'Đang có key đã mã hóa. Bỏ trống để giữ; nhập key mới để thay.'
+                  : 'Cần để app tự chuyển tiền RA khỏi Polymarket (giao dịch gasless). Tạo ở polymarket.com → Settings → API Keys → Relayer API Keys, chép "API Key" vào đây và "Signer Address" vào ô dưới. Mã hóa bằng TRADING_SECRET_KEY, không bao giờ được trả lại.'
+              }
+            >
+              <Input
+                id="ac-relayer-key"
+                name="polymarket-relayer-key"
+                type="password"
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
+                className="num"
+                value={relayerKey}
+                onChange={(e) => setRelayerKey(e.target.value)}
+                placeholder={editing?.hasRelayerKey ? '•••••• (đang lưu)' : undefined}
+              />
+            </Field>
+            <Field
+              label="Signer Address của Relayer key"
+              htmlFor="ac-relayer-address"
+              error={relayerErr}
+              help="Địa chỉ hiện cùng API Key khi tạo Relayer API Key."
+            >
+              <Input
+                id="ac-relayer-address"
+                name="polymarket-relayer-address"
+                autoComplete="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                className="num"
+                value={relayerAddress}
+                onChange={(e) => setRelayerAddress(e.target.value)}
                 placeholder="0x…"
               />
             </Field>
@@ -604,8 +672,12 @@ function AccountForm({
             >
               <Input
                 id="ac-key"
+                name="polymarket-private-key"
                 type="password"
-                autoComplete="off"
+                // "off" bị Chrome bỏ qua với ô mật khẩu: new-password để trình duyệt không tự điền mật khẩu đã lưu
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
                 className="num"
                 value={privateKey}
                 onChange={(e) => setPrivateKey(e.target.value)}

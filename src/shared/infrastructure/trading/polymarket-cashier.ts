@@ -13,7 +13,7 @@
 import { prepareGaslessTransaction } from '@polymarket/client/actions';
 import { encodeAbiParameters, encodeFunctionData, getAddress } from 'viem';
 import type { LiveTradingConfig } from '../../application/live-trading.js';
-import { polymarketSecureClient, polymarketSigner } from './venue-orders.js';
+import { polymarketRelayerClient, polymarketSigner } from './venue-orders.js';
 
 export const POLYGON = 137;
 /** Tiền giao dịch Polymarket (pUSD) — collateralToken của môi trường production trong SDK. */
@@ -187,6 +187,8 @@ export interface PolymarketSendResult {
 export async function sendUsdtFromPolymarket(
   c: LiveTradingConfig['polymarket'],
   p: { amountUsd: number; recipient: string },
+  /** Relayer API Key (polymarket.com → Settings → API Keys): key + Signer Address. */
+  relayer: { key: string; address: string },
   hooks: {
     onSubmitted?: (r: {
       txHash: string | null;
@@ -196,7 +198,7 @@ export async function sendUsdtFromPolymarket(
     signal?: AbortSignal;
   } = {},
 ): Promise<PolymarketSendResult> {
-  const client = await polymarketSecureClient(c);
+  const client = await polymarketRelayerClient(c, relayer);
   const wallet = client.account.wallet;
   const amount = BigInt(Math.floor(p.amountUsd * 1e6));
   if (amount <= 0n) throw new Error('POLYMARKET_SEND_AMOUNT_INVALID');

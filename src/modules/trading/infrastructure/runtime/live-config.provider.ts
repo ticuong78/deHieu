@@ -335,7 +335,7 @@ export class LiveConfigProvider
         ...config,
         execution: {
           empire: empireSession,
-          polymarket: { ...poly.config, secretCipher: poly.secretCipher },
+          polymarket: polyExecution(poly.config, poly.secretCipher),
         },
       };
     } catch (e) {
@@ -361,7 +361,7 @@ export class LiveConfigProvider
     if (account.config.venue === 'polymarket') {
       if (!account.secretCipher) throw new Error('POLYMARKET_KEY_MISSING');
       const r = await readPolymarketBalance(
-        { ...account.config, secretCipher: account.secretCipher },
+        polyExecution(account.config, account.secretCipher),
         signal,
       );
       return {
@@ -444,7 +444,7 @@ export class LiveConfigProvider
         this.credentials(empire)?.username ?? null,
       ),
       readPolymarketBalance(
-        { ...poly.config, secretCipher: poly.secretCipher },
+        polyExecution(poly.config, poly.secretCipher),
         AbortSignal.timeout(60_000),
       ),
     ]);
@@ -462,9 +462,21 @@ export class LiveConfigProvider
     onSubmitted: (ref: string | null) => Promise<void>,
   ) {
     if (!poly.secretCipher) throw new Error('POLYMARKET_KEY_MISSING');
+    const relayerCipher = poly.config.relayerApiKeyCipher;
+    const relayerAddress = poly.config.relayerApiKeyAddress;
+    if (!relayerCipher || !relayerAddress)
+      throw new Error(
+        'POLYMARKET_RELAYER_KEY_MISSING: chưa lưu Relayer API Key + Signer Address cho ví Polymarket',
+      );
     const r = await sendUsdtFromPolymarket(
-      { ...poly.config, secretCipher: poly.secretCipher },
+      polyExecution(poly.config, poly.secretCipher),
       { amountUsd: usd, recipient },
+      {
+        key: new AesGcmSecretCipher(process.env.TRADING_SECRET_KEY).decrypt(
+          relayerCipher,
+        ),
+        address: relayerAddress,
+      },
       {
         onSubmitted: (s) =>
           onSubmitted(
@@ -553,4 +565,17 @@ function haltResource(account: TradingAccount) {
         ).toLowerCase(),
       )
     : accountResource('csgoempire', account.config.browserProfile);
+}
+
+/** Cấu hình ký lệnh Polymarket: bỏ Relayer API Key mã hóa (không gửi sang worker / không cần khi vào lệnh). */
+function polyExecution(
+  c: TradingAccount['config'] & { venue: 'polymarket' },
+  secretCipher: string,
+) {
+  return {
+    venue: c.venue,
+    walletAddress: c.walletAddress,
+    funderAddress: c.funderAddress,
+    secretCipher,
+  };
 }
