@@ -87,5 +87,25 @@ describe('kế hoạch vốn theo hạng kèo', () => {
         overrides: { x: { minStake: 5, maxStake: 1 } },
       }),
     ).toContain('minStake > maxStake');
+    // 0 = không giới hạn số lệnh
+    expect(
+      validateStakePlan({ ...plan, overrides: { x: { maxEntries: 0 } } }),
+    ).toBeNull();
+    expect(
+      validateStakePlan({ ...plan, overrides: { x: { maxEntries: -1 } } }),
+    ).toContain('maxEntries');
+    expect(
+      validateStakePlan({ ...plan, overrides: { x: { minDailyMargin: -1 } } }),
+    ).toContain('minDailyMargin');
+  });
+
+  it('lãi tối thiểu mỗi ngày của hạng: ghi đè đi vào bảng, không ghi đè = null', () => {
+    const rows = resolveStakeTable(
+      { ...plan, overrides: { [tiers[0].id]: { minDailyMargin: 0.02 } } },
+      tiers,
+    );
+    const byId = new Map(rows.map((r) => [r.tierId, r]));
+    expect(byId.get(tiers[0].id)?.minDailyMargin).toBe(0.02);
+    expect(byId.get(tiers[1].id)?.minDailyMargin).toBeNull();
   });
 });

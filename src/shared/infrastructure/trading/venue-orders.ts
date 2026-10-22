@@ -351,12 +351,17 @@ export function empireCoins(user: Record<string, unknown>): number {
   return coins;
 }
 
-async function polymarketClient(c: LiveTradingConfig['polymarket']) {
-  const signer = privateKey(
+/** Bộ ký của ví Polymarket (giải mã private key bằng TRADING_SECRET_KEY). */
+export function polymarketSigner(c: LiveTradingConfig['polymarket']) {
+  return privateKey(
     new AesGcmSecretCipher(process.env.TRADING_SECRET_KEY).decrypt(
       c.secretCipher,
     ),
   );
+}
+
+async function polymarketClient(c: LiveTradingConfig['polymarket']) {
+  const signer = polymarketSigner(c);
   const client = await createSecureClient({
     signer,
     wallet: c.funderAddress ?? c.walletAddress,
@@ -385,7 +390,7 @@ const polyKey = (c: LiveTradingConfig['polymarket']) =>
     .digest('hex');
 
 /** Kết nối giữ sẵn (≤ 30 phút); tạo lỗi thì không giữ. Đổi key / ví → khóa khác → tạo mới. */
-function cachedPolymarketClient(c: LiveTradingConfig['polymarket']) {
+export function cachedPolymarketClient(c: LiveTradingConfig['polymarket']) {
   const key = polyKey(c);
   const hit = polyClients.get(key);
   if (hit && Date.now() - hit.at < POLY_CLIENT_TTL_MS) return hit.client;

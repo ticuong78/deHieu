@@ -55,11 +55,14 @@ export function StakePlanEditor({
   value,
   onChange,
   defaultEntries,
+  defaultDaily = 0,
 }: {
   value: StakePlan;
   onChange: (p: StakePlan) => void;
   /** Số lệnh mỗi cửa mặc định của profile (ô trống ở cột Số lệnh = dùng số này). */
   defaultEntries: number;
+  /** Lãi tối thiểu mỗi ngày mặc định của profile (tỉ lệ; ô trống ở cột Lãi/ngày = dùng số này). */
+  defaultDaily?: number;
 }) {
   const [preview, setPreview] = useState<StakePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +181,9 @@ export function StakePlanEditor({
                 <TH numeric>
                   <HeadHint label="Số lệnh mỗi cửa" hint={COL_HINT.entries} />
                 </TH>
+                <TH numeric>
+                  <HeadHint label="Lãi tối thiểu / ngày (%)" hint={COL_HINT.daily} />
+                </TH>
               </tr>
             </THead>
             <tbody>
@@ -219,9 +225,18 @@ export function StakePlanEditor({
                       <CellInput
                         label={`Số lệnh mỗi cửa ${r.tierName}`}
                         value={o.maxEntries}
-                        placeholder={String(defaultEntries)}
+                        placeholder={defaultEntries > 0 ? String(defaultEntries) : '∞'}
                         narrow
-                        onValue={(v) => setOverride(r.tierId, { maxEntries: v === undefined ? undefined : Math.min(100, Math.max(1, Math.floor(v))) })}
+                        onValue={(v) => setOverride(r.tierId, { maxEntries: v === undefined ? undefined : Math.min(100, Math.max(0, Math.floor(v))) })}
+                      />
+                    </TD>
+                    <TD numeric>
+                      <CellInput
+                        label={`Lãi tối thiểu mỗi ngày ${r.tierName}`}
+                        value={o.minDailyMargin === undefined ? undefined : +(o.minDailyMargin * 100).toFixed(4)}
+                        placeholder={defaultDaily > 0 ? String(+(defaultDaily * 100).toFixed(4)) : 'tắt'}
+                        narrow
+                        onValue={(v) => setOverride(r.tierId, { minDailyMargin: v === undefined ? undefined : Math.min(10, Math.max(0, v / 100)) })}
                       />
                     </TD>
                   </TR>
@@ -249,7 +264,9 @@ const COL_HINT = {
   min: 'Tiền cược csgoempire thấp nhất chấp nhận được, so với TỔNG share mua được ở mọi mức giá cộng lại (không phải từng người bán). Ví dụ mục tiêu 50$, tối thiểu 35$: mua được 80 share → 40$ ≥ 35$ thì vào 40$; chỉ 60 share → 30$ thì bỏ qua cả hai chân. Giữ nguyên cho mọi margin trong hạng, kể cả khi bật Tăng dần trong hạng.',
   max: 'Chỉ có tác dụng khi bật Tăng dần trong hạng. Khi bật: tiền mục tiêu tăng đều từ cột Tiền mục tiêu (ở cận dưới của hạng) lên số này (ở cận trên), theo margin của kèo.',
   entries:
-    'Một cửa (cùng market, cùng cặp sàn/phía) ở hạng này được vào tối đa bấy nhiêu lệnh — kể cả vào lặp lại CÙNG một kèo mỗi lần kèo được làm mới. Đủ số thì bỏ qua im lặng. Ô trống = theo "Số lệnh mỗi cửa mỗi hạng" mặc định của profile (ô bên dưới). Mỗi hạng đếm riêng.',
+    'Một cửa (cùng market, cùng cặp sàn/phía) ở hạng này được vào tối đa bấy nhiêu lệnh — kể cả vào lặp lại CÙNG một kèo mỗi lần kèo được làm mới. Đủ số thì bỏ qua im lặng. Ô trống = theo "Số lệnh mỗi cửa mỗi hạng" mặc định của profile (ô bên dưới). 0 = không giới hạn. Mỗi hạng đếm riêng.',
+  daily:
+    'Ưu tiên kèo lãi cao theo ngày khóa vốn. Lãi/ngày = margin kèo ÷ số ngày tới khi trận có kết quả (giờ bắt đầu + 3 giờ, tối thiểu 1 ngày). Dưới số này thì bỏ qua (Lãi theo ngày thấp) để dành tiền cho kèo trận gần. Ví dụ ngưỡng 1%/ngày: kèo 3% trận cách 5 ngày = 0,6%/ngày → bỏ; kèo 15% trận cách 2 ngày = 7,5%/ngày → vào. Ô trống = theo "Lãi tối thiểu mỗi ngày" của profile; 0 = tắt cho hạng này.',
 } as const;
 
 /** Tăng dần trong hạng: mục tiêu tăng thêm bao nhiêu $ mỗi 0,1% margin (null = không tăng). */

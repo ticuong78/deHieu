@@ -183,7 +183,8 @@ export function ExposureLedger() {
             <tbody>
               {data.entries.map((e) => {
                 const r = parseRoom(e.room);
-                const full = e.max !== null && e.count >= e.max;
+                // max 0 = không giới hạn số lệnh
+                const full = e.max !== null && e.max > 0 && e.count >= e.max;
                 return (
                   <TR key={`${e.profileId}|${e.room}|${e.comboId}|${e.tierId}`}>
                     <TD className="text-muted-fg">
@@ -218,7 +219,7 @@ export function ExposureLedger() {
                         className={cn('num', full ? 'text-warn' : 'text-fg')}
                       >
                         {e.count}
-                        {e.max !== null ? ` / ${e.max}` : ''}
+                        {e.max !== null ? ` / ${e.max > 0 ? e.max : '∞'}` : ''}
                       </span>
                     </TD>
                     <TD numeric className="num text-caption text-muted-fg">

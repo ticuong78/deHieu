@@ -1,3 +1,4 @@
+import { DEFAULT_TRADING_SETTINGS } from '../../domain/trading-settings.js';
 import { describe, expect, it, vi } from 'vitest';
 import { TraderConfigSync } from '../trader-config.sync.js';
 import type { TraderRuntimeConfig } from '../trader-config.js';
@@ -59,7 +60,11 @@ describe('private live worker configuration', () => {
         delete: () => Promise.resolve(false),
       },
       {
-        get: () => Promise.resolve({ matchExposureCapUsd: 100 }),
+        get: () =>
+          Promise.resolve({
+            ...DEFAULT_TRADING_SETTINGS,
+            matchExposureCapUsd: 100,
+          }),
         save: () => Promise.resolve(),
       },
       {

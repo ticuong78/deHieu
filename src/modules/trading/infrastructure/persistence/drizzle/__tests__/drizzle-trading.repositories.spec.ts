@@ -1,3 +1,4 @@
+import { DEFAULT_TRADING_SETTINGS } from '../../../../domain/trading-settings.js';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -119,8 +120,14 @@ describe('Postgres: auto trade', () => {
   it('cấu hình chung: mặc định giới hạn theo trận BẬT; lưu 0 = tắt', async () => {
     const s = new DrizzleTradingSettingsStore(tx);
     expect((await s.get()).matchExposureCapUsd).toBeGreaterThan(0);
-    await s.save({ matchExposureCapUsd: 0 });
-    expect(await s.get()).toEqual({ matchExposureCapUsd: 0 });
+    await s.save({ ...DEFAULT_TRADING_SETTINGS, matchExposureCapUsd: 0 });
+    expect(await s.get()).toEqual({
+      ...DEFAULT_TRADING_SETTINGS,
+      matchExposureCapUsd: 0,
+    });
+    // bản ghi cũ chỉ có matchExposureCapUsd → tự chuyển tiền mặc định TẮT
+    await s.save({ matchExposureCapUsd: 7 } as never);
+    expect((await s.get()).rebalance.mode).toBe('off');
   });
 
   it('lệnh: bỏ trùng id, lọc + phân trang, thống kê theo lý do', async () => {

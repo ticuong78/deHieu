@@ -80,6 +80,7 @@ const config = (
       scaleWithinTier: false,
       enabled: true,
       maxEntries: null,
+      minDailyMargin: null,
     },
   ],
   strategy: { id: 'arb-taker', params: {} },
@@ -92,6 +93,7 @@ const config = (
     markets: null,
     oneClickMinPrice: 0,
     maxNetMargin: 0,
+    minDailyMargin: 0,
   },
   matchExposureCapUsd: 0,
   ...over,
@@ -335,6 +337,7 @@ describe('TraderArbitrageTask (giấy)', () => {
       scaleWithinTier: false,
       enabled: true,
       maxEntries: null,
+      minDailyMargin: null,
     };
     const std = {
       ...vip,
@@ -375,6 +378,7 @@ describe('TraderArbitrageTask (giấy)', () => {
           markets: null,
           oneClickMinPrice: 0,
           maxNetMargin: 0,
+          minDailyMargin: 0,
         },
       }),
     );
@@ -387,6 +391,109 @@ describe('TraderArbitrageTask (giấy)', () => {
       'paper_filled',
       'paper_filled',
     ]);
+    await t.stop();
+  });
+
+  it('số lệnh mỗi hạng = 0 → không giới hạn (vẫn đếm trong sổ)', async () => {
+    const t = start(new TraderArbitrageTask(), params('A'));
+    const base = config('A');
+    await t.command(
+      'config',
+      config('A', { risk: { ...base.risk, maxEntriesPerTier: 0 } }),
+    );
+    await until(() => hub.consumers.has('trader:A'));
+    for (const id of ['u1', 'u2', 'u3', 'u4']) {
+      hub.broadcast({ type: 'signal', kind: 'issued', signal: signal(id) });
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    expect(trades(t).map((x) => x.status)).toEqual([
+      'paper_filled',
+      'paper_filled',
+      'paper_filled',
+      'paper_filled',
+    ]);
+    await t.stop();
+  });
+
+  it('hạng ghi đè số lệnh = 0 → không giới hạn dù mặc định profile là 1', async () => {
+    const t = start(new TraderArbitrageTask(), params('A'));
+    const base = config('A');
+    await t.command(
+      'config',
+      config('A', {
+        stakeTable: base.stakeTable.map((r) => ({ ...r, maxEntries: 0 })),
+      }),
+    );
+    await until(() => hub.consumers.has('trader:A'));
+    for (const id of ['v1', 'v2', 'v3']) {
+      hub.broadcast({ type: 'signal', kind: 'issued', signal: signal(id) });
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    expect(trades(t).filter((x) => x.status === 'paper_filled')).toHaveLength(
+      3,
+    );
+    await t.stop();
+  });
+
+  it('lãi/ngày: kèo 6% trận cách 6 ngày (1%/ngày) dưới ngưỡng 2%/ngày → bỏ qua; trận trong ngày → vào', async () => {
+    const t = start(new TraderArbitrageTask(), params('A'));
+    const base = config('A');
+    await t.command(
+      'config',
+      config('A', {
+        risk: { ...base.risk, maxEntriesPerTier: 0, minDailyMargin: 0.02 },
+      }),
+    );
+    await until(() => hub.consumers.has('trader:A'));
+    const at = (id: string, startsAt: number) => {
+      const s = signal(id);
+      return { ...s, legs: s.legs.map((l) => ({ ...l, startsAt })) };
+    };
+    // 6 ngày tới giờ bắt đầu (+3 giờ ra kết quả) → ~6,1 ngày → 0,98%/ngày
+    hub.broadcast({
+      type: 'signal',
+      kind: 'issued',
+      signal: at('far', Date.now() + 6 * 86_400_000),
+    });
+    await until(() => trades(t).length === 1);
+    expect(trades(t)[0]?.status).toBe('skipped');
+    expect(trades(t)[0]?.reason).toMatch(/^LOW_DAILY_RETURN:/);
+    // trận 2 giờ nữa → tính 1 ngày → 6%/ngày
+    hub.broadcast({
+      type: 'signal',
+      kind: 'issued',
+      signal: at('near', Date.now() + 2 * 3_600_000),
+    });
+    await until(() => trades(t).length === 2);
+    expect(trades(t)[1]?.status).toBe('paper_filled');
+    await t.stop();
+  });
+
+  it('lãi/ngày: hạng ghi đè 0 → tắt kiểm tra cho hạng đó dù profile đặt ngưỡng', async () => {
+    const t = start(new TraderArbitrageTask(), params('A'));
+    const base = config('A');
+    await t.command(
+      'config',
+      config('A', {
+        stakeTable: base.stakeTable.map((r) => ({ ...r, minDailyMargin: 0 })),
+        risk: { ...base.risk, minDailyMargin: 0.5 },
+      }),
+    );
+    await until(() => hub.consumers.has('trader:A'));
+    const s = signal('d1');
+    hub.broadcast({
+      type: 'signal',
+      kind: 'issued',
+      signal: {
+        ...s,
+        legs: s.legs.map((l) => ({
+          ...l,
+          startsAt: Date.now() + 10 * 86_400_000,
+        })),
+      },
+    });
+    await until(() => trades(t).length === 1);
+    expect(trades(t)[0]?.status).toBe('paper_filled');
     await t.stop();
   });
 
@@ -582,6 +689,7 @@ describe('TraderArbitrageTask (giấy)', () => {
   it('hạng chồng nhau: chỉ chọn trong hạng được tick (VIP không tick, VIP-auto tick → vào VIP-auto)', async () => {
     const row = {
       maxEntries: null,
+      minDailyMargin: null,
       minStake: 5,
       maxStake: 25,
       stake: 25,

@@ -442,7 +442,10 @@ describe('TradingAdmin + TraderConfigSync', () => {
 
     // không đổi → không gửi lại; đổi cấu hình chung → gửi
     expect(await sync.pushAll()).toBe(0);
-    await admin.saveSettings({ matchExposureCapUsd: 0 });
+    await admin.saveSettings({
+      ...DEFAULT_TRADING_SETTINGS,
+      matchExposureCapUsd: 0,
+    });
     expect(gateway.pushed.at(-1)!.config.matchExposureCapUsd).toBe(0);
   });
 

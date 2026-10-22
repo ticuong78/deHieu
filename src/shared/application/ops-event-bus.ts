@@ -134,6 +134,37 @@ export type OpsEvent =
     >
   | Base<'trading.reconciled', { profileId: string; cleared: number }>
   | Base<
+      'trading.rebalance_needed',
+      {
+        profileId: string;
+        profileName: string;
+        /** Lệnh thật vừa bị hủy vì thiếu Cash. */
+        tradeId: string;
+        /** Số dư hai bên, bên thiếu, đề xuất chuyển bao nhiêu từ đâu sang đâu (tỉ lệ 35/65). */
+        summary: string;
+        fromVenue: string | null;
+        toVenue: string | null;
+        amountUsd: number;
+      }
+    >
+  | Base<'trading.rebalanced', { profileId: string; by: string }>
+  | Base<
+      'trading.rebalance_transfer',
+      {
+        profileId: string;
+        profileName: string;
+        /** dry_run · skipped · completed · failed · unconfirmed · unknown … */
+        state: string;
+        mode: 'dry_run' | 'live';
+        fromVenue: string | null;
+        toVenue: string | null;
+        amountUsd: number;
+        ref: string | null;
+        reason: string | null;
+      }
+    >
+  | Base<'trading.rebalance_unblocked', { profileId: string; by: string }>
+  | Base<
       'trading.session_lost',
       { browserProfile: string; error: string; attempts: number }
     >

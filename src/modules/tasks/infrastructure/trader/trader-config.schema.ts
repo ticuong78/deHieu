@@ -50,8 +50,10 @@ export const TraderConfigSchema = z.object({
       scaleWithinTier: z.boolean(),
       // app cũ không gửi → vào hạng
       enabled: z.boolean().default(true),
-      // null = theo risk.maxEntriesPerTier
-      maxEntries: z.number().int().min(1).nullable().default(null),
+      // null = theo risk.maxEntriesPerTier; 0 = không giới hạn
+      maxEntries: z.number().int().min(0).nullable().default(null),
+      // null = theo risk.minDailyMargin (app cũ không gửi)
+      minDailyMargin: z.number().min(0).max(10).nullable().default(null),
     }),
   ),
   strategy: z.object({
@@ -62,7 +64,8 @@ export const TraderConfigSchema = z.object({
     minNetMargin: z.number().finite().min(0).max(1),
     matchCapUsd: nonNeg,
     maxSignalAgeMs: nonNeg,
-    maxEntriesPerTier: z.number().int().min(1).default(1),
+    // 0 = không giới hạn số lệnh mỗi cửa mỗi hạng
+    maxEntriesPerTier: z.number().int().min(0).default(1),
     ignoreCancelReasons: z.array(z.string()).default([]),
     // null = mọi market (app cũ không gửi)
     markets: z.array(z.string()).nullable().default(null),
@@ -70,6 +73,8 @@ export const TraderConfigSchema = z.object({
     oneClickMinPrice: z.number().min(0).max(1).default(0),
     // margin kèo / lãi ròng vượt số này → nghi giá cũ, bỏ qua; 0 = tắt (app cũ không gửi)
     maxNetMargin: z.number().min(0).max(10).default(0),
+    // lãi tối thiểu mỗi ngày khóa vốn; 0 = tắt (app cũ không gửi)
+    minDailyMargin: z.number().min(0).max(10).default(0),
   }),
   matchExposureCapUsd: nonNeg,
 });

@@ -11,6 +11,7 @@ import { PageHeader, Section } from '../ui/layout';
 import { Pill } from '../ui/status';
 import { ExposureLedger } from './exposure-ledger';
 import { PaperTrades } from './paper-trades';
+import { RebalancePanel, RebalanceSettingsSection } from './rebalance-panel';
 import { NumInput } from './stake-plan-editor';
 import { TraderProfiles } from './trader-profiles';
 import { TradingAccounts } from './trading-accounts';
@@ -36,6 +37,7 @@ export function TradingPage() {
           </>
         }
       />
+      <RebalancePanel />
       <div className="mb-8">
         <Segmented<Tab>
           value={tab}
@@ -58,6 +60,10 @@ export function TradingPage() {
       {tab === 'settings' ? (
         <>
           <GlobalLimits
+            settings={settings.data}
+            onSaved={() => void settings.reload()}
+          />
+          <RebalanceSettingsSection
             settings={settings.data}
             onSaved={() => void settings.reload()}
           />

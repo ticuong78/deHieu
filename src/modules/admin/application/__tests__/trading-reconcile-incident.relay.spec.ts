@@ -71,4 +71,47 @@ describe('sự cố "cần đối soát lệnh thật"', () => {
     });
     expect(incidents.clear).toHaveBeenCalledWith('trading.session:empire-test');
   });
+
+  it('lệnh hủy vì hết tiền → sự cố cảnh báo "cần cân bằng tiền"; đã chuyển xong → đóng', () => {
+    const ops = new InMemoryOpsEventBus();
+    const incidents = { raise: vi.fn(), clear: vi.fn() };
+    new TradingReconcileIncidentRelay(
+      ops,
+      incidents as unknown as IncidentTracker,
+    ).start();
+    ops.publish({
+      type: 'trading.rebalance_needed',
+      topic: 'alerts',
+      at: 1,
+      data: {
+        profileId: 'p1',
+        profileName: 'test',
+        tradeId: 't1',
+        summary: 'Chuyển 65.00$ từ Polymarket sang csgoempire',
+        fromVenue: 'polymarket',
+        toVenue: 'csgoempire',
+        amountUsd: 65,
+      },
+    });
+    const [key, sig] = incidents.raise.mock.calls[0] as [
+      string,
+      { kind: string; severity: string; message: string },
+    ];
+    expect(key).toBe('trading.rebalance:p1');
+    expect(sig).toMatchObject({
+      kind: 'trading.rebalance',
+      severity: 'warning',
+    });
+    expect(sig.message).toContain('Chuyển 65.00$');
+    ops.publish({
+      type: 'trading.rebalanced',
+      topic: 'alerts',
+      at: 2,
+      data: { profileId: 'p1', by: 'admin' },
+    });
+    expect(incidents.clear).toHaveBeenCalledWith(
+      'trading.rebalance:p1',
+      'transferred',
+    );
+  });
 });

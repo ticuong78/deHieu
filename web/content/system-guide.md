@@ -439,7 +439,8 @@ Cột **Tiền mục tiêu**, **Tiền mục tiêu tối thiểu**, **Tiền m�
 | Tối thiểu (% tiền hạng) | Mức tối thiểu của mọi hạng = tiền hạng × %. Vào được ít hơn → bỏ qua. 0% = vào được bao nhiêu cũng vào |
 | Tối đa (× tiền hạng) | Chỉ dùng khi bật **Tăng dần trong hạng**. ×1 = không tăng |
 | Ô trong bảng | Ghi đè cho riêng hạng đó (để trống = tự tính theo các trường trên) |
-| Số lệnh mỗi cửa (cột cuối) | Số lệnh tối đa cho một cửa ở hạng đó; ô trống = theo "Số lệnh mỗi cửa mỗi hạng (mặc định)" của profile. Tính cả việc vào lặp lại cùng một kèo mỗi lần kèo được làm mới. Đủ số thì bỏ qua **im lặng** (không ghi dòng). Tăng số này thì kèo còn sống của cửa đó được xét lại ngay |
+| Số lệnh mỗi cửa | Số lệnh tối đa cho một cửa ở hạng đó; ô trống = theo "Số lệnh mỗi cửa mỗi hạng (mặc định)" của profile; **0 = không giới hạn** (chỉ còn hạn mức tiền theo trận chặn). Tính cả việc vào lặp lại cùng một kèo mỗi lần kèo được làm mới. Đủ số thì bỏ qua **im lặng** (không ghi dòng). Tăng số này thì kèo còn sống của cửa đó được xét lại ngay |
+| Lãi tối thiểu / ngày (cột cuối) | Ghi đè "Lãi tối thiểu mỗi ngày" của profile cho riêng hạng đó; ô trống = theo profile; 0 = tắt cho hạng này. Xem mục **Ưu tiên kèo theo lãi mỗi ngày** |
 
 **Tiền mục tiêu và Tối thiểu cùng đơn vị** (USD cược csgoempire), chỉ khác vai trò: mục tiêu là mức muốn vào (và không vượt), tối thiểu là mức thấp nhất còn chấp nhận. Ví dụ mục tiêu 50$, tối thiểu 35$, odds 2.0 → cần 100 share Polymarket:
 
@@ -466,10 +467,27 @@ Bảng xem trước ghi sẵn mức tăng này dưới tên mỗi hạng. Hạng
 
 Hạng không được tick trong profile bị **loại trước**; trong các hạng được tick, nhiều hạng cùng khớp một margin (khoảng chồng nhau) → dùng hạng có **cận dưới cao nhất**. Ví dụ VIP 3–6% (không tick) và VIP cho giao dịch tự động 2–8% (tick): kèo 4,9% vào theo VIP cho giao dịch tự động.
 
+### Ưu tiên kèo theo lãi mỗi ngày
+
+Tiền vào lệnh bị **khóa** tới khi trận có kết quả. Kèo lãi 3% mà trận còn 5 ngày nữa mới đá giữ tiền 5 ngày, trong khi kèo 15–20% của trận sắp đá trả tiền về ngay. Ô **Lãi tối thiểu mỗi ngày (%/ngày)** của profile (và cột **Lãi tối thiểu / ngày** của từng hạng) bỏ qua kèo không đáng giữ tiền lâu:
+
+`lãi/ngày = margin kèo ÷ số ngày`, với `số ngày = (giờ bắt đầu + 3 giờ − bây giờ) ÷ 24 giờ`, **tối thiểu 1 ngày** (trận trong ngày hoặc đang đá đều tính 1 ngày). Giờ bắt đầu lấy chân có giờ **muộn nhất**; kèo không có giờ bắt đầu thì không kiểm tra.
+
+| Ngưỡng 1%/ngày | Margin | Cách giờ đá | Lãi/ngày | Kết quả |
+|---|---|---|---|---|
+| Trận xa, lãi mỏng | 3% | 5 ngày | 0,6%/ngày | bỏ qua (`LOW_DAILY_RETURN`) |
+| Trận gần, lãi cao | 15% | 2 ngày | 7,5%/ngày | vào |
+| Trận hôm nay | 0,8% | 4 giờ | 0,8%/ngày (tính 1 ngày) | bỏ qua |
+
+- Thứ tự áp: hạng → **lãi/ngày** → số lệnh mỗi cửa → sổ lệnh. Hạng có ô riêng thì dùng ô của hạng, không thì dùng của profile. `0` = tắt (mặc định).
+- Kèo bị bỏ vì lãi/ngày vẫn được **xét lại mỗi lần publisher làm mới kèo**: trận càng gần thì lãi/ngày càng cao nên tới lúc đạt ngưỡng sẽ tự vào. Lệnh giấy chỉ ghi **một** dòng *Lãi theo ngày thấp* cho mỗi kèo (các lần làm mới vẫn dưới ngưỡng không ghi thêm). Hạ ngưỡng thì kèo đang bị chặn được xét lại ngay.
+- Người bấm **Vào lệnh** ở On click không bị chặn bởi ngưỡng này.
+- Chi tiết lệnh ghi `detail.daily = { days, perDay }` để xem kèo đó được tính bao nhiêu ngày.
+
 ### Worker quyết định một lệnh như thế nào (chiến lược taker)
 
 1. **Chọn hạng** theo margin kèo → tiền mục tiêu `S`. Không khớp hạng nào → bỏ qua (`NO_TIER`).
-2. **Kiểm tra giới hạn**: số lệnh tối đa mỗi cửa ở hạng này, hạn mức tổng theo trận (chung và của profile).
+2. **Kiểm tra giới hạn**: lãi tối thiểu mỗi ngày (`LOW_DAILY_RETURN`), số lệnh tối đa mỗi cửa ở hạng này (0 = không giới hạn), hạn mức tổng theo trận (chung và của profile).
 3. **Đọc sổ lệnh** Polymarket thật của cửa cần mua, cần `S × O` share.
 4. **Ăn lệnh bán từ giá rẻ nhất lên**: mua hết mức giá rẻ nhất, chưa đủ thì sang mức rẻ thứ hai… Dừng khi:
    - đủ số share cần;
@@ -520,6 +538,7 @@ Dấu "đã xử lý" theo mã kèo lưu ở Redis, còn tới khi kèo hết h�
   | Market / Hạng không được chọn, Không thuộc hạng nào, Profile đứng yên, Chiến lược không có | đúng phần đó |
   | Hết hạn mức trận | hạn mức chung hoặc hạn mức trận của profile |
   | Hết lãi sau phí | lãi ròng tối thiểu |
+  | Lãi theo ngày thấp | lãi tối thiểu mỗi ngày (profile hoặc hạng) |
   | Sổ lệnh mỏng, Dưới lệnh tối thiểu | lãi ròng tối thiểu, bảng tiền |
   | Kèo quá cũ | "Bỏ kèo cũ hơn" |
   | Đủ số lệnh của cửa (im lặng) | số lệnh mỗi cửa mỗi hạng |
@@ -568,6 +587,53 @@ Mỗi profile có ngưỡng **Chuyển On click khi giá bán thấp nhất ≥*
 - Bảng On click nằm trong bộ nhớ app: restart app thì trống đến lần trader làm mới kèo kế tiếp.
 - Tab **Lịch sử** của trang On click lưu trong database mọi kèo từng lên bảng: lên lúc nào, cập nhật bao nhiêu lần, phân tích gần nhất, **rời bảng lúc nào và vì sao**: người bấm vào lệnh (ai, kết quả), kèo bị hủy (lý do), hết hạn, bot tự vào vì giá xuống dưới ngưỡng, bot xét lại và bỏ (hết lãi…), app khởi động lại. Lọc theo kết quả, tìm theo mã kèo hoặc tên đội.
 - Tìm một kèo cụ thể: **Kèo → Lịch sử**, gõ mã kèo (đủ hoặc vài ký tự đầu) hoặc tên đội, chọn "Tất cả" thời gian. Mã kèo trong chi tiết lệnh giấy bấm được để nhảy thẳng tới đó.
+
+### Cân bằng tiền giữa csgoempire và Polymarket (35/65)
+
+Mỗi profile nên giữ tiền theo tỉ lệ **csgoempire 35% / Polymarket 65%** (một kèo cần tiền cược csgoempire `S` và khoảng `S × O × giá` bên Polymarket, nên Polymarket cần nhiều hơn). Khi lệnh **thật** bị hủy trước khi gửi vì một bên không đủ Cash (`INSUFFICIENT_CASH`), app:
+
+1. Lấy số dư hai bên đọc ngay trước khi gửi lệnh (ghi trong `detail.cash` của lệnh), tính `tổng = csgoempire + Polymarket`, mục tiêu csgoempire = `tổng × 35%`.
+2. Đề xuất **chuyển bao nhiêu, từ đâu sang đâu** (làm tròn xuống tới cent; lệch dưới 1$ coi như đã cân). Ví dụ csgoempire 5$, Polymarket 195$ → tổng 200$, mục tiêu 70$ / 130$ → chuyển **65$ Polymarket → csgoempire**.
+3. Hiện đề xuất ở đầu trang **Auto trade** (khung *Cân bằng tiền*), mở sự cố cảnh báo *Cần cân bằng tiền — profile …* ở mục Sự cố và gửi push về điện thoại (OneSignal). Lệnh hủy tiếp theo cùng tình trạng chỉ tăng bộ đếm, không báo lại; báo lại khi kế hoạch đổi chiều, số tiền lệch hơn max(5$, 10%) hoặc sau 6 giờ.
+4. Nếu hai bên **đã đúng tỉ lệ** mà vẫn thiếu, hoặc chuyển theo tỉ lệ không bù được bên đang thiếu → thông báo ghi rõ *tổng tiền không đủ cho lệnh*: cần nạp thêm hoặc giảm tiền theo hạng.
+
+Chuyển xong (tay hoặc tự động) bấm **Đã chuyển xong** để đóng đề xuất và sự cố.
+
+#### Tối ưu theo số lệnh vào được
+
+35/65 là tỉ lệ **mục tiêu**, không phải luật cứng. Lệnh bị hủy vì hết tiền cho biết **tiền một lệnh** ở mỗi bên (csgoempire = tiền cược, Polymarket = share × giá + phí) và **lệnh nhỏ nhất** (Tối thiểu của hạng ÷ tiền mục tiêu). Từ đó:
+
+| Tình huống (vd lệnh cần 10$ csgoempire + 18$ Polymarket = 28$) | Làm gì |
+| --- | --- |
+| Tổng hai bên < một lệnh nhỏ nhất (vd < 28$, hoặc < 14$ nếu Tối thiểu 50%) | **Không chuyển**: chuyển qua lại cũng không vào được lệnh nào; báo "cần nạp thêm" |
+| Tổng < một lệnh đầy đủ nhưng ≥ lệnh nhỏ nhất | Chia theo đúng tỉ lệ tiền lệnh cần (10 : 18) → vào được lệnh **lớn nhất** có thể |
+| Đủ nhiều lệnh, chia 35/65 vào được tối đa số lệnh | Về 35/65 |
+| Chia 35/65 làm một bên thiếu (vd 35% tổng < 10$, hoặc Polymarket cần nhiều hơn 65%) | Dành đủ tiền cho **số lệnh tối đa** (floor(tổng ÷ 28$)) ở mỗi bên, phần dư mới chia 35/65 |
+| Chuyển không làm vào thêm được lệnh nào (đã tối ưu) | **Không chuyển** |
+
+Chỉ chuyển khi số lệnh đầy đủ vào được **tăng**, hoặc từ không vào được lệnh nào thành vào được, hoặc (khi chưa đủ một lệnh đầy đủ) lệnh vào được lớn thêm ≥ 10% lệnh đầy đủ. Hạn mức mỗi lần / mỗi ngày cắt bớt mà số còn lại không vào thêm được lệnh → không chuyển (`LIMIT_NO_GAIN`). Cần ít hơn **Tối thiểu** thì chuyển tròn lên Tối thiểu nếu bên chuyển vẫn dư (đỡ chuyển lắt nhắt). Chưa có lệnh nào bị hủy để biết tiền một lệnh (bấm "Chuyển ngay" lần đầu) thì chỉ theo tỉ lệ 35/65.
+
+#### Tự chuyển tiền
+
+Bật ở **Auto trade → Giới hạn chung → Tự chuyển tiền**: **Tắt** (mặc định, chỉ đề xuất) · **Chạy thử** (tính và ghi "sẽ chuyển X$" vào lịch sử, KHÔNG gửi tiền) · **Chuyển thật**. Mỗi lượt:
+
+1. Đọc số dư **mới** của hai tài khoản (không dùng số của lệnh vừa hủy), tính phần chênh về 35/65.
+2. Số tiền = min(phần chênh, **Tối đa mỗi lần**, phần còn lại của **Tối đa mỗi ngày**); dưới **Tối thiểu** thì bỏ qua.
+3. Chuyển theo đúng cách trang hai sàn làm (lấy từ HAR):
+   - **Polymarket → csgoempire**: một giao dịch gasless qua relayer Polymarket: đổi pUSD → USDC.e → USDT (báo giá Relay) gửi thẳng tới **địa chỉ nạp USDT Polygon của csgoempire**. Xong khi khoản nạp có đúng mã giao dịch đó được cộng vào csgoempire.
+   - **csgoempire → Polymarket**: tạo lệnh rút USDT (Polygon) trên csgoempire (qua Chrome nền của hồ sơ, như bấm Rút) về **địa chỉ nạp Polymarket**; Polymarket tự đổi USDT thành tiền giao dịch. Xong khi csgoempire báo lệnh rút đã xác nhận (có mã giao dịch). Sàn thu phí rút > 0 thì không tự rút.
+4. Kết quả vào **Lịch sử chuyển** (cùng tab), sự kiện vận hành và push.
+
+Chốt an toàn:
+
+- Chỉ gửi tới **địa chỉ nạp đã lưu** trong tài khoản (Auto trade → Tài khoản → sửa): csgoempire có nút **Lấy từ csgoempire** (đối chiếu với trang trước khi lưu); lúc chuyển, địa chỉ trang csgoempire trả phải trùng địa chỉ đã lưu, khác thì dừng. Địa chỉ nạp Polymarket lấy ở Polymarket → Deposit → Crypto → USDT (Polygon); **không** dùng địa chỉ ví ký / ví proxy.
+- Mỗi profile một lượt (khóa Redis); xong một lượt thì tự động chờ 10 phút mới chuyển tiếp (bấm **Chuyển ngay** thì không chờ).
+- Lỗi **trước** khi gửi → *Lỗi*, trả lại hạn mức ngày. Lỗi **sau** khi đã gửi, hoặc quá 30 phút chưa xác nhận → *Không rõ / Chưa xác nhận*: **tự chuyển của profile đó dừng**, mở sự cố nghiêm trọng; kiểm tra số dư hai sàn và Polygonscan rồi bấm **Đã kiểm tra — gỡ chặn**. App không bao giờ tự gửi lại.
+- Tài khoản đang khóa đối soát / phiên csgoempire hỏng thì không chuyển.
+
+Nên bật **Chạy thử** vài lần, xem số tiền và chiều trong lịch sử đúng, rồi mới **Chuyển thật** với hạn mức nhỏ.
+
+Lưu ý: số dư là Cash **rảnh** (chưa gồm tiền đang nằm trong lệnh chưa có kết quả), nên tỉ lệ chỉ đúng cho phần tiền đang rảnh. Đề xuất chỉ nằm trong bộ nhớ app (restart = mất đề xuất, lệnh hủy kế tiếp tạo lại); sự cố vẫn lưu ở lịch sử Sự cố.
 
 ### Sổ phơi nhiễm (Redis) và thống kê Lệnh giấy
 
@@ -625,6 +691,9 @@ Công cụ này kiểm tra mẫu descriptor và stream theo schema hiện tại;
 | Lane và evaluator            | `src/modules/odds/application/lane-dispatcher.ts`, `arbitrage-evaluator.ts`        |
 | Parser Polymarket            | `src/modules/odds/infrastructure/acl/polymarket/`                                  |
 | Giao tín hiệu và ACK         | `src/modules/odds/infrastructure/consumer/consumer-hub.ts`, `consumer-protocol.ts` |
+| Lãi theo ngày               | `src/shared/domain/daily-return.ts`                                                |
+| Cân bằng tiền 35/65          | `src/modules/trading/domain/balance-rebalance.ts`, `application/rebalance-advisor.ts` |
+| Tự chuyển tiền               | `src/modules/trading/application/rebalance-executor.ts`, `src/shared/infrastructure/trading/empire-cashier.ts`, `polymarket-cashier.ts` |
 | API                          | `docs/API.md`, Swagger tại `/docs` trên backend khi được bật                       |
 
 Tài liệu mô tả triển khai hiện tại của repo. Khi thay đổi mapping, chính sách hoặc adapter lưu trữ, cần cập nhật mục tương ứng.

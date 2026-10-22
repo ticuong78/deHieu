@@ -35,9 +35,12 @@ import { TRADING_PERMISSIONS as P } from '../application/trading.permissions.js'
 import { TRADE_SOURCES, TRADE_STATUSES } from '../application/trade-attempt.js';
 import { STAKE_TRENDS } from '../domain/stake-plan.js';
 import { TRADER_MODES } from '../domain/trader-profile.js';
+import { REBALANCE_MODES } from '../domain/trading-settings.js';
 import { unwrap } from './http-errors.js';
 import { EmpireLoginAdmin } from '../application/empire-login-admin.js';
 import { ReconcileAdmin } from '../application/reconcile-admin.js';
+import { RebalanceAdvisor } from '../application/rebalance-advisor.js';
+import { RebalanceExecutor } from '../application/rebalance-executor.js';
 import { AccountCheckAdmin } from '../application/account-check-admin.js';
 import { AccountReportAdmin } from '../application/account-report-admin.js';
 import {
@@ -46,6 +49,10 @@ import {
 } from '../application/trade-settlement.js';
 
 const money = z.number().min(0).max(1_000_000);
+const evmAddress = z
+  .string()
+  .trim()
+  .regex(/^0x[0-9a-fA-F]{40}$/, 'dạng 0x + 40 ký tự hex');
 
 const AccountBody = z.object({
   loginUsername: z.string().trim().min(1).max(200).optional(),
@@ -56,6 +63,8 @@ const AccountBody = z.object({
     z.object({
       venue: z.literal('csgoempire'),
       browserProfile: z.string().trim().min(1).max(64),
+      /** Địa chỉ nạp USDT Polygon của csgoempire đã xác nhận (tự chuyển Polymarket → csgoempire). */
+      usdtDepositAddress: evmAddress.nullish().transform((v) => v || null),
     }),
     z.object({
       venue: z.literal('polymarket'),
@@ -65,6 +74,8 @@ const AccountBody = z.object({
         .trim()
         .nullish()
         .transform((v) => v || null),
+      /** Địa chỉ nạp USDT Polygon ở trang Deposit của Polymarket (tự rút csgoempire → Polymarket). */
+      usdtDepositAddress: evmAddress.nullish().transform((v) => v || null),
     }),
   ]),
   /** Chỉ polymarket. Bỏ trống khi sửa = giữ key cũ. Không bao giờ được trả lại. */
@@ -85,8 +96,10 @@ const StakePlanBody = z.object({
         stake: money.optional(),
         minStake: money.optional(),
         maxStake: money.optional(),
-        /** Số lệnh tối đa mỗi cửa ở hạng này (ghi đè risk.maxEntriesPerTier). */
-        maxEntries: z.number().int().min(1).max(100).optional(),
+        /** Số lệnh tối đa mỗi cửa ở hạng này (ghi đè risk.maxEntriesPerTier); 0 = không giới hạn. */
+        maxEntries: z.number().int().min(0).max(100).optional(),
+        /** Lãi tối thiểu mỗi ngày ở hạng này (ghi đè risk.minDailyMargin); 0 = tắt cho hạng này. */
+        minDailyMargin: z.number().min(0).max(10).optional(),
       }),
     )
     .default({}),
@@ -112,8 +125,8 @@ const ProfileBody = z.object({
       minNetMargin: z.number().min(0).max(0.99).default(0.01),
       matchCapUsd: money.default(0),
       maxSignalAgeMs: z.number().int().min(0).max(600_000).default(3_000),
-      /** Số lệnh tối đa cho một cửa ở mỗi hạng kèo (mỗi hạng tính riêng). */
-      maxEntriesPerTier: z.number().int().min(1).max(100).default(1),
+      /** Số lệnh tối đa cho một cửa ở mỗi hạng kèo (mỗi hạng tính riêng); 0 = không giới hạn. */
+      maxEntriesPerTier: z.number().int().min(0).max(100).default(1),
       /** Lý do hủy kèo mà trader vẫn vào tiếp lệnh đang tính. */
       ignoreCancelReasons: z
         .array(z.string().trim().min(1).max(60))
@@ -129,6 +142,8 @@ const ProfileBody = z.object({
       oneClickMinPrice: z.number().min(0).max(1).default(0.5),
       /** Margin / lãi ròng vượt số này → nghi giá cũ, bỏ qua (cả vào tay); 0 = tắt. */
       maxNetMargin: z.number().min(0).max(10).default(0.15),
+      /** Lãi tối thiểu mỗi ngày khóa vốn (margin ÷ số ngày tới khi trận có kết quả); 0 = tắt. */
+      minDailyMargin: z.number().min(0).max(10).default(0),
     })
     .default({
       minNetMargin: 0.01,
@@ -139,10 +154,23 @@ const ProfileBody = z.object({
       markets: null,
       oneClickMinPrice: 0.5,
       maxNetMargin: 0.15,
+      minDailyMargin: 0,
     }),
 });
 
-const SettingsBody = z.object({ matchExposureCapUsd: money });
+const SettingsBody = z.object({
+  matchExposureCapUsd: money,
+  /** Tự chuyển tiền cân bằng 35/65; bỏ trống = giữ cấu hình hiện tại. */
+  rebalance: z
+    .object({
+      mode: z.enum(REBALANCE_MODES),
+      maxPerTransferUsd: money,
+      maxPerDayUsd: money,
+      minTransferUsd: money,
+    })
+    .partial()
+    .optional(),
+});
 
 const TradesQuery = z.object({
   profileId: z.string().optional(),
@@ -250,6 +278,8 @@ export class TradingController {
     private readonly _accountReport: AccountReportAdmin,
     @Inject(SettlementAdmin) private readonly _settlement: SettlementAdmin,
     @Inject(ReconcileAdmin) private readonly _reconcile: ReconcileAdmin,
+    @Inject(RebalanceAdvisor) private readonly _rebalance: RebalanceAdvisor,
+    @Inject(RebalanceExecutor) private readonly _transfer: RebalanceExecutor,
   ) {}
 
   // ------------------------------------------------------------- tài khoản
@@ -466,6 +496,107 @@ export class TradingController {
     return unwrap(await this._reconcile.resume(id));
   }
 
+  @Get('rebalance')
+  @RequirePermissions(P.READ)
+  @ApiOperation({
+    summary: 'Đề xuất cân bằng tiền đang chờ',
+    description:
+      'Quyền: trading:read. Lệnh thật bị hủy vì một bên thiếu Cash (INSUFFICIENT_CASH) → app tính kế hoạch chuyển tiền giữa hai tài khoản của profile về tỉ lệ csgoempire empireShare (0.35) / Polymarket phần còn lại, theo số dư đọc ngay trước khi gửi lệnh. Mỗi profile một đề xuất (mới nhất). App KHÔNG tự chuyển tiền. Đề xuất chỉ nằm trong bộ nhớ (restart app = mất; sự cố tương ứng vẫn lưu ở mục Sự cố).',
+  })
+  rebalance() {
+    return {
+      empireShare: this._rebalance.empireShare,
+      suggestions: this._rebalance.list(),
+    };
+  }
+
+  @Get('rebalance/transfers')
+  @RequirePermissions(P.READ)
+  @ApiOperation({
+    summary: 'Lịch sử tự chuyển tiền',
+    description:
+      'Quyền: trading:read. 50 lượt gần nhất (Redis): dry_run (chạy thử), skipped (lý do), planned/submitted/sent, completed, failed, unconfirmed / unknown (tự chuyển của profile bị chặn tới khi gỡ). Kèm `blocked`: profileId → lý do chặn.',
+  })
+  async rebalanceTransfers() {
+    const transfers = await this._transfer.list(50);
+    const ids = [...new Set(transfers.map((t) => t.profileId))];
+    const blocked = Object.fromEntries(
+      (
+        await Promise.all(
+          ids.map(
+            async (id) => [id, await this._transfer.blocked(id)] as const,
+          ),
+        )
+      ).filter(([, r]) => r),
+    );
+    return { transfers, blocked };
+  }
+
+  @Post('rebalance/:profileId/execute')
+  @HttpCode(200)
+  @RequirePermissions(P.MANAGE)
+  @ApiOperation({
+    summary: 'Chuyển ngay (cân bằng 35/65)',
+    description:
+      'Quyền: trading:manage. Đọc số dư mới, tính số cần chuyển và chuyển theo chế độ ở Giới hạn chung (dry_run = chỉ ghi "sẽ chuyển", live = chuyển thật), trong hạn mức mỗi lần / mỗi ngày, chỉ tới địa chỉ nạp đã lưu. Trả kết quả nếu xong trong 15 giây, không thì { started: true } (xem lịch sử).',
+  })
+  async rebalanceExecute(@Param('profileId') profileId: string) {
+    const run = this._transfer.run(profileId, 'manual');
+    const done = await Promise.race([
+      run,
+      new Promise<null>((r) => setTimeout(() => r(null), 15_000)),
+    ]);
+    if (!done) {
+      run.catch(() => undefined);
+      return { started: true };
+    }
+    return unwrap(done);
+  }
+
+  @Post('rebalance/:profileId/unblock')
+  @HttpCode(200)
+  @RequirePermissions(P.MANAGE)
+  @ApiOperation({
+    summary: 'Gỡ chặn tự chuyển tiền',
+    description:
+      'Quyền: trading:manage. Dùng SAU KHI đã kiểm tra tiền trên hai sàn (lượt chuyển trước lỗi / chưa rõ kết quả). Đóng sự cố tương ứng.',
+  })
+  async rebalanceUnblock(
+    @Param('profileId') profileId: string,
+    @CurrentPrincipal() principal?: { id: string },
+  ) {
+    return unwrap(
+      await this._transfer.unblock(profileId, principal?.id ?? 'unknown'),
+    );
+  }
+
+  @Get('accounts/:id/empire-deposit-address')
+  @RequirePermissions(P.MANAGE)
+  @ApiOperation({
+    summary: 'Địa chỉ nạp USDT Polygon csgoempire của tài khoản',
+    description:
+      'Quyền: trading:manage. Đọc bằng Chrome nền của hồ sơ (trang Deposit → USDT Polygon). Người vận hành đối chiếu rồi lưu vào tài khoản để bật tự chuyển Polymarket → csgoempire.',
+  })
+  async empireDepositAddress(@Param('id') id: string) {
+    return unwrap(await this._transfer.empireDepositAddress(id));
+  }
+
+  @Post('rebalance/:profileId/done')
+  @HttpCode(200)
+  @RequirePermissions(P.MANAGE)
+  @ApiOperation({
+    summary: 'Đã chuyển tiền xong — đóng đề xuất cân bằng',
+    description:
+      'Quyền: trading:manage. Dùng SAU KHI đã tự chuyển tiền giữa hai tài khoản (hoặc quyết định bỏ qua). Xóa đề xuất của profile và đóng sự cố "Cần cân bằng tiền". Không có đề xuất → 404.',
+  })
+  rebalanceDone(
+    @Param('profileId') profileId: string,
+    @CurrentPrincipal() principal?: { id: string },
+  ) {
+    const r = this._rebalance.resolve(profileId, principal?.id ?? 'unknown');
+    return unwrap(r ? { status: 'SUCEED', data: r } : { status: 'NOT_FOUND' });
+  }
+
   @Delete('profiles/:id')
   @RequirePermissions(P.MANAGE)
   @ApiOperation({
@@ -523,7 +654,15 @@ export class TradingController {
     off: { summary: 'Tắt giới hạn', value: { matchExposureCapUsd: 0 } },
   })
   async saveSettings(@Body() body: unknown) {
-    return unwrap(await this._admin.saveSettings(SettingsBody.parse(body)));
+    const b = SettingsBody.parse(body);
+    const cur = await this._admin.getSettings();
+    return unwrap(
+      await this._admin.saveSettings({
+        ...cur,
+        matchExposureCapUsd: b.matchExposureCapUsd,
+        rebalance: { ...cur.rebalance, ...(b.rebalance ?? {}) },
+      }),
+    );
   }
 
   // ------------------------------------------------------------- lệnh

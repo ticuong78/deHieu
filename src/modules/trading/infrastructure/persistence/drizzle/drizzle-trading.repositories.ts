@@ -30,6 +30,7 @@ import {
   type TraderProfile,
 } from '../../../domain/trader-profile.js';
 import {
+  DEFAULT_REBALANCE_SETTINGS,
   DEFAULT_TRADING_SETTINGS,
   type TradingSettings,
 } from '../../../domain/trading-settings.js';
@@ -84,6 +85,8 @@ const toAccount = (r: AccountRow): TradingAccount | null => {
     config = {
       venue: 'csgoempire',
       browserProfile: str(c.browserProfile),
+      usdtDepositAddress:
+        typeof c.usdtDepositAddress === 'string' ? c.usdtDepositAddress : null,
     };
   else if (r.venue === 'polymarket')
     config = {
@@ -91,6 +94,8 @@ const toAccount = (r: AccountRow): TradingAccount | null => {
       walletAddress: str(c.walletAddress),
       funderAddress:
         typeof c.funderAddress === 'string' ? c.funderAddress : null,
+      usdtDepositAddress:
+        typeof c.usdtDepositAddress === 'string' ? c.usdtDepositAddress : null,
     };
   else return null; // nền tảng không còn hỗ trợ: bỏ qua thay vì làm hỏng cả danh sách
   return {
@@ -572,9 +577,12 @@ export class DrizzleTradingSettingsStore implements TradingSettingsStore {
       .select()
       .from(settings)
       .where(eq(settings.key, SETTINGS_KEY));
+    const v = (r?.value as Partial<TradingSettings> | undefined) ?? {};
     return {
       ...DEFAULT_TRADING_SETTINGS,
-      ...((r?.value as Partial<TradingSettings> | undefined) ?? {}),
+      ...v,
+      // bản ghi cũ chưa có / thiếu trường → mặc định (tắt)
+      rebalance: { ...DEFAULT_REBALANCE_SETTINGS, ...(v.rebalance ?? {}) },
     };
   }
 

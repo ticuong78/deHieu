@@ -51,6 +51,7 @@ export const REASON_LABEL: Record<string, string> = {
   BOTH_ORDERS_REJECTED: 'Hai sàn từ chối lệnh',
   POLYMARKET_NOT_FILLED: 'Polymarket không khớp — không vào BetBy',
   SUSPICIOUS_MARGIN: 'Margin cao bất thường — nghi giá cũ',
+  LOW_DAILY_RETURN: 'Lãi theo ngày thấp — trận còn xa',
   LIVE_ALREADY_SUBMITTED: 'Cặp lệnh đã được gửi',
   NO_EDGE: 'Hết lãi sau phí',
   INSUFFICIENT_DEPTH: 'Sổ lệnh mỏng',
@@ -126,6 +127,8 @@ function explain(t: TradeAttempt, d: Detail): string {
         : rest(t.reason);
     case 'BELOW_MIN_ORDER':
       return `Số share mua được dưới lệnh tối thiểu của market (${d.sizing?.minShares ?? '—'} share). ${rest(t.reason)}`;
+    case 'LOW_DAILY_RETURN':
+      return `Lãi chia cho số ngày vốn bị khóa tới khi trận có kết quả (${rest(t.reason)}) dưới ngưỡng lãi tối thiểu mỗi ngày của profile/hạng, nên bỏ qua để dành tiền cho kèo trận gần lãi cao hơn. Kèo được xét lại mỗi lần làm mới: trận càng gần, lãi/ngày càng cao.`;
     case 'ONE_CLICK':
       return `Giá bán thấp nhất Polymarket ${d.minAsk ?? '—'} ≥ ngưỡng On click ${d.oneClickMinPrice ?? '—'} của profile, nên bot không tự vào mà chuyển kèo sang trang On click chờ người bấm vào lệnh.`;
     case 'BUDGET_EXHAUSTED':

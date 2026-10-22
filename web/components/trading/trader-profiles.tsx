@@ -687,6 +687,7 @@ function ProfileForm({
           value={plan}
           onChange={setPlan}
           defaultEntries={risk.maxEntriesPerTier}
+          defaultDaily={risk.minDailyMargin}
         />
         <div className="h-px bg-line" />
 
@@ -736,15 +737,32 @@ function ProfileForm({
           <Field
             label="Số lệnh mỗi cửa mỗi hạng (mặc định)"
             htmlFor="pf-entries"
-            help="Cùng cửa ở cùng hạng vào tối đa bấy nhiêu lệnh (kể cả vào lặp lại cùng một kèo mỗi lần làm mới), dù margin lên hay xuống; lên hạng khác thì tính lại từ đầu. Đủ số thì bỏ qua im lặng. Đặt riêng cho từng hạng ở cột Số lệnh mỗi cửa trong bảng tiền."
+            help="Cùng cửa ở cùng hạng vào tối đa bấy nhiêu lệnh (kể cả vào lặp lại cùng một kèo mỗi lần làm mới), dù margin lên hay xuống; lên hạng khác thì tính lại từ đầu. Đủ số thì bỏ qua im lặng. 0 = không giới hạn số lệnh (chỉ còn hạn mức tiền theo trận chặn). Đặt riêng cho từng hạng ở cột Số lệnh mỗi cửa trong bảng tiền."
           >
             <NumInput
               id="pf-entries"
               value={risk.maxEntriesPerTier}
               onValue={(v) =>
                 v !== undefined &&
-                v >= 1 &&
+                v >= 0 &&
+                v <= 100 &&
                 setRisk({ ...risk, maxEntriesPerTier: Math.floor(v) })
+              }
+            />
+          </Field>
+          <Field
+            label="Lãi tối thiểu mỗi ngày (%/ngày)"
+            htmlFor="pf-daily"
+            help="Ưu tiên kèo lãi cao theo ngày khóa vốn: lãi/ngày = margin kèo ÷ số ngày tới khi trận có kết quả (giờ bắt đầu + 3 giờ, tối thiểu 1 ngày). Dưới ngưỡng → bỏ qua để dành tiền cho kèo trận gần lãi cao; kèo được xét lại mỗi lần làm mới nên trận tới gần thì tự vào. Vd 1%/ngày: kèo 3% cách 5 ngày (0,6%/ngày) bỏ, kèo 15% cách 2 ngày (7,5%/ngày) vào. Ghi đè từng hạng ở cột Lãi tối thiểu / ngày trong bảng tiền. 0 = tắt."
+          >
+            <NumInput
+              id="pf-daily"
+              value={+((risk.minDailyMargin ?? 0) * 100).toFixed(4)}
+              onValue={(v) =>
+                v !== undefined &&
+                v >= 0 &&
+                v <= 1000 &&
+                setRisk({ ...risk, minDailyMargin: v / 100 })
               }
             />
           </Field>

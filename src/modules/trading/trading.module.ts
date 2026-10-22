@@ -51,6 +51,12 @@ import { EmpireLoginAdmin } from './application/empire-login-admin.js';
 import { AccountCheckAdmin } from './application/account-check-admin.js';
 import { ReconcileAdmin } from './application/reconcile-admin.js';
 import { ReconcileAlerts } from './application/reconcile-alerts.js';
+import { RebalanceAdvisor } from './application/rebalance-advisor.js';
+import { RebalanceExecutor } from './application/rebalance-executor.js';
+import {
+  InMemoryRebalanceTransferStore,
+  RedisRebalanceTransferStore,
+} from './infrastructure/rebalance/rebalance-transfer.store.js';
 import {
   OPS_EVENT_BUS,
   type OpsEventBus,
@@ -148,6 +154,70 @@ const ONE_CLICK_SWEEP_MS = 10_000;
           cfg.get('WEB_APP_URL', { infer: true }) ?? null,
           (e) => log.warn(`báo cần đối soát lỗi: ${String(e)}`),
         );
+      },
+    },
+    {
+      provide: RebalanceAdvisor,
+      inject: [
+        OPS_EVENT_BUS,
+        PUSH_SENDER,
+        TRADER_PROFILE_REPOSITORY,
+        ConfigService,
+      ],
+      useFactory: (
+        ops: OpsEventBus,
+        sender: PushSender | null,
+        profiles: TraderProfileRepository,
+        cfg: ConfigService<Env, true>,
+      ) => {
+        const log = new Logger('RebalanceAdvisor');
+        return new RebalanceAdvisor(
+          ops,
+          sender,
+          async (id) => (await profiles.get(id))?.name ?? null,
+          cfg.get('WEB_APP_URL', { infer: true }) ?? null,
+          (e) => log.warn(`đề xuất cân bằng tiền lỗi: ${String(e)}`),
+        );
+      },
+    },
+    {
+      provide: RebalanceExecutor,
+      inject: [
+        LiveConfigProvider,
+        TRADING_SETTINGS_STORE,
+        TRADER_PROFILE_REPOSITORY,
+        TRADING_ACCOUNT_REPOSITORY,
+        RebalanceAdvisor,
+        OPS_EVENT_BUS,
+        PUSH_SENDER,
+      ],
+      useFactory: (
+        gateway: LiveConfigProvider,
+        settings: TradingSettingsStore,
+        profiles: TraderProfileRepository,
+        accounts: TradingAccountRepository,
+        advisor: RebalanceAdvisor,
+        ops: OpsEventBus,
+        sender: PushSender | null,
+      ) => {
+        const log = new Logger('RebalanceExecutor');
+        const url = process.env.REDIS_URL;
+        const executor = new RebalanceExecutor(
+          gateway,
+          url
+            ? new RedisRebalanceTransferStore(url)
+            : new InMemoryRebalanceTransferStore(),
+          settings,
+          profiles,
+          accounts,
+          advisor,
+          ops,
+          sender,
+          (e) => log.warn(`tự chuyển tiền: ${String(e)}`),
+        );
+        // lệnh thật hủy vì hết tiền → tự chuyển (nếu bật ở Giới hạn chung)
+        advisor.onShortage((profileId) => executor.auto(profileId));
+        return executor;
       },
     },
     {
@@ -362,6 +432,7 @@ const ONE_CLICK_SWEEP_MS = 10_000;
         OneClickHistoryRecorder,
         OneClickNotifier,
         ReconcileAlerts,
+        RebalanceAdvisor,
       ],
       useFactory: (
         r: TradeAttemptRepository,
@@ -370,6 +441,7 @@ const ONE_CLICK_SWEEP_MS = 10_000;
         h: OneClickHistoryRecorder,
         n: OneClickNotifier,
         a: ReconcileAlerts,
+        rb: RebalanceAdvisor,
       ) => {
         const log = new Logger('OneClickPush');
         if (!n.enabled)
@@ -384,7 +456,12 @@ const ONE_CLICK_SWEEP_MS = 10_000;
           h,
           n,
           (e) => log.warn(`gửi thông báo On click lỗi: ${String(e)}`),
-          a,
+          // lệnh cần đối soát → báo; lệnh hủy vì hết tiền → đề xuất cân bằng 35/65 (cả hai tự nuốt lỗi)
+          {
+            trade: async (t) => {
+              await Promise.all([a.trade(t), rb.trade(t)]);
+            },
+          },
         );
       },
     },

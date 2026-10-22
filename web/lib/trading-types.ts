@@ -4,11 +4,18 @@ import type { SignalTier } from './types';
 export type TradingVenue = 'csgoempire' | 'polymarket';
 
 export type TradingAccountConfig =
-  | { venue: 'csgoempire'; browserProfile: string }
+  | {
+      venue: 'csgoempire';
+      browserProfile: string;
+      /** Địa chỉ nạp USDT Polygon csgoempire đã xác nhận (tự chuyển Polymarket → csgoempire). */
+      usdtDepositAddress?: string | null;
+    }
   | {
       venue: 'polymarket';
       walletAddress: string;
       funderAddress: string | null;
+      /** Địa chỉ nạp USDT Polygon ở trang Deposit của Polymarket (tự rút csgoempire → Polymarket). */
+      usdtDepositAddress?: string | null;
     };
 
 export interface TradingAccountView {
@@ -57,8 +64,10 @@ export interface TierStakeOverride {
   stake?: number;
   minStake?: number;
   maxStake?: number;
-  /** Số lệnh tối đa mỗi cửa ở hạng này (ghi đè mặc định của profile). */
+  /** Số lệnh tối đa mỗi cửa ở hạng này (ghi đè mặc định của profile); 0 = không giới hạn. */
   maxEntries?: number;
+  /** Lãi tối thiểu mỗi ngày khóa vốn ở hạng này (tỉ lệ, ghi đè profile); 0 = tắt cho hạng này. */
+  minDailyMargin?: number;
 }
 
 export interface StakePlan {
@@ -98,6 +107,8 @@ export interface StakeRow {
   enabled?: boolean;
   /** Số lệnh mỗi cửa riêng của hạng; null = theo mặc định profile. */
   maxEntries?: number | null;
+  /** Lãi tối thiểu mỗi ngày riêng của hạng; null = theo profile. */
+  minDailyMargin?: number | null;
 }
 
 export interface StakePreview {
@@ -109,7 +120,7 @@ export interface RiskLimits {
   minNetMargin: number;
   matchCapUsd: number;
   maxSignalAgeMs: number;
-  /** Số lệnh tối đa cho một cửa ở mỗi hạng kèo (mỗi hạng tính riêng). */
+  /** Số lệnh tối đa cho một cửa ở mỗi hạng kèo (mỗi hạng tính riêng); 0 = không giới hạn. */
   maxEntriesPerTier: number;
   /** Lý do hủy kèo mà trader vẫn vào tiếp lệnh đang tính. */
   ignoreCancelReasons: string[];
@@ -119,6 +130,8 @@ export interface RiskLimits {
   oneClickMinPrice: number;
   /** Margin kèo / lãi ròng vượt số này (vd 0.15) → nghi giá cũ, bỏ qua (cả vào tay). 0 = tắt. */
   maxNetMargin: number;
+  /** Lãi tối thiểu mỗi ngày khóa vốn (margin ÷ số ngày tới khi trận có kết quả, vd 0.01 = 1%/ngày). 0 = tắt. */
+  minDailyMargin: number;
 }
 
 export const DEFAULT_RISK: RiskLimits = {
@@ -130,6 +143,7 @@ export const DEFAULT_RISK: RiskLimits = {
   markets: null,
   oneClickMinPrice: 0.5,
   maxNetMargin: 0.15,
+  minDailyMargin: 0,
 };
 
 /** Kết quả của kèo On click (lọc lịch sử). */
@@ -192,8 +206,20 @@ export interface TraderRuntimeConfig {
   matchExposureCapUsd: number;
 }
 
+export type RebalanceMode = 'off' | 'dry_run' | 'live';
+
+/** Tự chuyển tiền cân bằng 35/65 giữa csgoempire và Polymarket. */
+export interface RebalanceSettings {
+  mode: RebalanceMode;
+  maxPerTransferUsd: number;
+  maxPerDayUsd: number;
+  minTransferUsd: number;
+}
+
 export interface TradingSettings {
   matchExposureCapUsd: number;
+  /** Bản backend cũ không có. */
+  rebalance?: RebalanceSettings;
   secretKeyConfigured: boolean;
 }
 
@@ -491,4 +517,79 @@ export interface AccountReport {
     };
   };
   trades: ReportTrade[];
+}
+
+/** Kế hoạch chuyển tiền giữa hai tài khoản của profile (tỉ lệ csgoempire / Polymarket). */
+export interface RebalancePlan {
+  empireShare: number;
+  totalUsd: number;
+  current: { csgoempire: number; polymarket: number };
+  target: { csgoempire: number; polymarket: number };
+  currentEmpireShare: number;
+  from: 'csgoempire' | 'polymarket';
+  to: 'csgoempire' | 'polymarket';
+  amountUsd: number;
+}
+
+/** Đề xuất cân bằng tiền khi lệnh thật bị hủy vì thiếu Cash. */
+export interface RebalanceSuggestion {
+  profileId: string;
+  profileName: string;
+  csgoempireAccountId: string | null;
+  polymarketAccountId: string | null;
+  tradeId: string;
+  teams: [string, string];
+  firstAt: number;
+  updatedAt: number;
+  triggers: number;
+  balances: { csgoempire: number; polymarket: number };
+  shortages: { venue: 'csgoempire' | 'polymarket'; available: number; required: number }[];
+  plan: RebalancePlan | null;
+  helpsShortage: boolean;
+  /** transfer = chuyển vào thêm được lệnh; insufficient = tổng < một lệnh nhỏ nhất; none = chuyển không vào thêm lệnh; ratio = chỉ theo tỉ lệ. */
+  verdict?: 'transfer' | 'insufficient' | 'none' | 'ratio';
+  /** Tổng tối thiểu cho một lệnh nhỏ nhất (verdict = insufficient). */
+  needUsd?: number | null;
+  summary: string;
+}
+
+export interface RebalanceView {
+  empireShare: number;
+  suggestions: RebalanceSuggestion[];
+}
+
+export type TransferState =
+  | 'dry_run'
+  | 'skipped'
+  | 'planned'
+  | 'submitted'
+  | 'sent'
+  | 'completed'
+  | 'failed'
+  | 'unconfirmed'
+  | 'unknown';
+
+/** Một lượt tự chuyển tiền. */
+export interface RebalanceTransfer {
+  id: string;
+  profileId: string;
+  profileName: string;
+  trigger: 'auto' | 'manual';
+  mode: 'dry_run' | 'live';
+  from: 'csgoempire' | 'polymarket' | null;
+  to: 'csgoempire' | 'polymarket' | null;
+  amountUsd: number;
+  destination: string | null;
+  balances: { csgoempire: number; polymarket: number } | null;
+  state: TransferState;
+  reason: string | null;
+  ref: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RebalanceTransfersView {
+  transfers: RebalanceTransfer[];
+  /** profileId → lý do tự chuyển đang bị chặn. */
+  blocked: Record<string, string>;
 }

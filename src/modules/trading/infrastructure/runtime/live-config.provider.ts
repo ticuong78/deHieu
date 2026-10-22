@@ -7,6 +7,13 @@ import type {
   TradingHaltControl,
 } from '../../application/trading.ports.js';
 import { readPolymarketBalance } from '../../../../shared/infrastructure/trading/venue-orders.js';
+import { EmpireCashier } from '../../../../shared/infrastructure/trading/empire-cashier.js';
+import { sendUsdtFromPolymarket } from '../../../../shared/infrastructure/trading/polymarket-cashier.js';
+import type {
+  EmpireAccount,
+  PolyAccount,
+  RebalanceGateway,
+} from '../../application/rebalance-executor.js';
 import { EmpireBalanceWatcher } from '../../../../shared/infrastructure/trading/empire-balance-watcher.js';
 import type {
   EmpireCredentials,
@@ -32,7 +39,8 @@ export class LiveConfigProvider
     TraderExecutionConfigProvider,
     EmpireBrowserGateway,
     TradingAccountChecker,
-    TradingHaltControl
+    TradingHaltControl,
+    RebalanceGateway
 {
   private readonly jobs = new Map<
     string,
@@ -414,6 +422,86 @@ export class LiveConfigProvider
       checkedAt: Date.now(),
     };
   }
+  // ------------------------------------------------------------- tự chuyển tiền (RebalanceGateway)
+
+  private cashier(): EmpireCashier {
+    if (!this.balances) throw new Error('LIVE_REDIS_REQUIRED');
+    return new EmpireCashier(this.balances);
+  }
+
+  async halted(empire: EmpireAccount, poly: PolyAccount) {
+    if (!this.locks) return 'LIVE_REDIS_REQUIRED';
+    await this.locks.connect();
+    return this.locks.halted([haltResource(empire), haltResource(poly)]);
+  }
+
+  async readBalances(empire: EmpireAccount, poly: PolyAccount) {
+    if (!poly.secretCipher) throw new Error('POLYMARKET_KEY_MISSING');
+    if (!this.balances) throw new Error('LIVE_REDIS_REQUIRED');
+    const [e, p] = await Promise.all([
+      this.balances.readNow(
+        empire.config.browserProfile,
+        this.credentials(empire)?.username ?? null,
+      ),
+      readPolymarketBalance(
+        { ...poly.config, secretCipher: poly.secretCipher },
+        AbortSignal.timeout(60_000),
+      ),
+    ]);
+    return { csgoempire: e.cash, polymarket: p.cash };
+  }
+
+  async empireDepositAddress(empire: EmpireAccount) {
+    return (await this.cashier().deposit(empire.config.browserProfile)).address;
+  }
+
+  async sendFromPolymarket(
+    poly: PolyAccount,
+    usd: number,
+    recipient: string,
+    onSubmitted: (ref: string | null) => Promise<void>,
+  ) {
+    if (!poly.secretCipher) throw new Error('POLYMARKET_KEY_MISSING');
+    const r = await sendUsdtFromPolymarket(
+      { ...poly.config, secretCipher: poly.secretCipher },
+      { amountUsd: usd, recipient },
+      {
+        onSubmitted: (s) =>
+          onSubmitted(
+            s.txHash ?? (s.transactionId ? `relayer:${s.transactionId}` : null),
+          ),
+      },
+    );
+    return { txHash: r.txHash };
+  }
+
+  async withdrawFromEmpire(
+    empire: EmpireAccount,
+    usd: number,
+    address: string,
+  ) {
+    const r = await this.cashier().withdraw(
+      empire.config.browserProfile,
+      usd,
+      address,
+    );
+    return { id: r.withdrawal.id, coinCents: r.withdrawal.coinCents };
+  }
+
+  async empireWithdrawal(empire: EmpireAccount, id: number) {
+    const w = await this.cashier().withdrawal(empire.config.browserProfile, id);
+    return w ? { state: w.state, txHash: w.txHash } : null;
+  }
+
+  async empireDepositCredited(empire: EmpireAccount, txHash: string) {
+    const { deposits } = await this.cashier().deposit(
+      empire.config.browserProfile,
+    );
+    return deposits.some(
+      (d) => d.credited && d.txHash?.toLowerCase() === txHash.toLowerCase(),
+    );
+  }
+
   sessionRejected(browserProfile: string, tokenHash: string) {
     if (this.sessions?.invalidate(browserProfile, tokenHash))
       this.logger.warn(

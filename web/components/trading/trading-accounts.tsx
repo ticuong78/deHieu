@@ -278,6 +278,8 @@ function AccountForm({
   const [browserProfile, setBrowserProfile] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
   const [funderAddress, setFunderAddress] = useState('');
+  const [depositAddress, setDepositAddress] = useState('');
+  const [fetchingDeposit, setFetchingDeposit] = useState(false);
   const [privateKey, setPrivateKey] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -303,6 +305,7 @@ function AccountForm({
     setFunderAddress(
       e?.config.venue === 'polymarket' ? (e.config.funderAddress ?? '') : '',
     );
+    setDepositAddress(e?.config.usdtDepositAddress ?? '');
     setPrivateKey('');
     setLoginUsername('');
     setLoginPassword('');
@@ -322,6 +325,26 @@ function AccountForm({
     funderAddress.trim() && !evm(funderAddress)
       ? 'Cần 0x + 40 ký tự hex, hoặc để trống.'
       : undefined;
+  const depositErr =
+    depositAddress.trim() && !evm(depositAddress)
+      ? 'Cần 0x + 40 ký tự hex, hoặc để trống.'
+      : venue === 'polymarket' &&
+          depositAddress.trim() &&
+          [walletAddress, funderAddress].some(
+            (w) => w.trim() && addr(w).toLowerCase() === addr(depositAddress).toLowerCase(),
+          )
+        ? 'Đây là ví ký / ví proxy, không phải địa chỉ nạp. Lấy địa chỉ ở Polymarket → Deposit → Crypto → USDT (Polygon).'
+        : undefined;
+  const fetchEmpireDeposit = async () => {
+    if (!editing) return;
+    setFetchingDeposit(true);
+    const r = await mutate<{ address: string }>(
+      `trading/accounts/${encodeURIComponent(editing.id)}/empire-deposit-address`,
+      { method: 'GET' },
+    );
+    setFetchingDeposit(false);
+    if (r) setDepositAddress(r.address);
+  };
   const keyOk =
     venue !== 'polymarket' ||
     !privateKey.trim() ||
@@ -331,19 +354,26 @@ function AccountForm({
     (venue === 'csgoempire'
       ? !/^[\w.-]{1,64}$/.test(browserProfile.trim()) ||
         !!loginUsername.trim() !== !!loginPassword ||
-        (!!loginPassword && secretKeyConfigured === false)
-      : !evm(walletAddress) ||
+        (!!loginPassword && secretKeyConfigured === false) ||
+        !!depositErr
+      : !!depositErr ||
+        !evm(walletAddress) ||
         (!!funderAddress.trim() && !evm(funderAddress)) ||
         !keyOk);
 
   const submit = async () => {
     const config =
       venue === 'csgoempire'
-        ? { venue, browserProfile: browserProfile.trim() }
+        ? {
+            venue,
+            browserProfile: browserProfile.trim(),
+            usdtDepositAddress: depositAddress.trim() ? addr(depositAddress) : null,
+          }
         : {
             venue,
             walletAddress: addr(walletAddress),
             funderAddress: funderAddress.trim() ? addr(funderAddress) : null,
+            usdtDepositAddress: depositAddress.trim() ? addr(depositAddress) : null,
           };
     setBusy(true);
     const r = await mutate(
@@ -486,6 +516,31 @@ function AccountForm({
                 maxLength={500}
               />
             </Field>
+            <Field
+              label="Địa chỉ nạp USDT Polygon (tự chuyển tiền)"
+              htmlFor="ac-deposit"
+              error={depositErr}
+              help="Địa chỉ csgoempire cấp ở Deposit → USDT (Polygon). Bấm “Lấy từ csgoempire” rồi ĐỐI CHIẾU với trang csgoempire trước khi lưu. Tự chuyển Polymarket → csgoempire chỉ gửi tới địa chỉ này, và dừng nếu trang csgoempire trả địa chỉ khác. Trống = không tự chuyển chiều này."
+            >
+              <div className="flex gap-2">
+                <Input
+                  id="ac-deposit"
+                  className="num"
+                  value={depositAddress}
+                  onChange={(e) => setDepositAddress(e.target.value)}
+                  placeholder="0x…"
+                />
+                {editing ? (
+                  <Button
+                    variant="secondary"
+                    loading={fetchingDeposit}
+                    onClick={fetchEmpireDeposit}
+                  >
+                    Lấy từ csgoempire
+                  </Button>
+                ) : null}
+              </div>
+            </Field>
           </>
         ) : (
           <>
@@ -514,6 +569,20 @@ function AccountForm({
                 className="num"
                 value={funderAddress}
                 onChange={(e) => setFunderAddress(e.target.value)}
+                placeholder="0x…"
+              />
+            </Field>
+            <Field
+              label="Địa chỉ nạp USDT Polygon của Polymarket (tự chuyển tiền)"
+              htmlFor="ac-deposit"
+              error={depositErr}
+              help="Polymarket → Deposit → Crypto → chọn USDT, mạng Polygon → chép địa chỉ. Polymarket tự đổi USDT nhận được thành tiền giao dịch và đưa vào ví. Tự rút csgoempire → Polymarket chỉ rút về địa chỉ này. KHÔNG dùng địa chỉ ví ký / ví proxy. Trống = không tự chuyển chiều này."
+            >
+              <Input
+                id="ac-deposit"
+                className="num"
+                value={depositAddress}
+                onChange={(e) => setDepositAddress(e.target.value)}
                 placeholder="0x…"
               />
             </Field>

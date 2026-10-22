@@ -75,7 +75,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         href:
           i.kind === 'odds.mass_removal'
             ? '/ingest?tenant=polymarket'
-            : i.kind === 'trading.reconcile' || i.kind === 'trading.session'
+            : i.kind === 'trading.reconcile' || i.kind === 'trading.session' || i.kind.startsWith('trading.rebalance')
               ? '/giao-dich'
               : taskId
               ? `/publisher?task=${encodeURIComponent(taskId)}`

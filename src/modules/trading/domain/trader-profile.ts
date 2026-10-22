@@ -25,6 +25,7 @@ export interface RiskLimits {
   /**
    * Số lệnh tối đa cho MỘT cửa (room + tổ hợp sàn/phía) ở MỖI hạng kèo. Mỗi hạng tính riêng:
    * cùng cửa lên từ Phổ thông → VIP → sVIP thì mỗi hạng vào được tới số này, dù margin lên hay xuống.
+   * 0 = không giới hạn số lệnh.
    */
   readonly maxEntriesPerTier: number;
   /**
@@ -48,6 +49,12 @@ export interface RiskLimits {
    * lệnh tới sàn → một chân khớp một chân không. 0 = tắt.
    */
   readonly maxNetMargin: number;
+  /**
+   * Lãi tối thiểu MỖI NGÀY khóa vốn (vd 0.01 = 1%/ngày): lãi/ngày = margin kèo ÷ số ngày tới khi trận
+   * có kết quả (tối thiểu 1 ngày). Kèo dưới ngưỡng bị bỏ qua (LOW_DAILY_RETURN) để dành tiền cho kèo
+   * trận gần, lãi cao. Mỗi hạng có thể ghi đè. 0 = tắt.
+   */
+  readonly minDailyMargin: number;
 }
 
 export const DEFAULT_RISK_LIMITS: RiskLimits = {
@@ -59,6 +66,7 @@ export const DEFAULT_RISK_LIMITS: RiskLimits = {
   markets: null,
   oneClickMinPrice: 0.5,
   maxNetMargin: 0.15,
+  minDailyMargin: 0,
 };
 
 /** Profile có vào market này không. */
@@ -83,14 +91,16 @@ export function validateRiskLimits(r: RiskLimits): string | null {
     return 'minNetMargin phải trong [0, 1)';
   if (!(r.matchCapUsd >= 0)) return 'matchCapUsd phải ≥ 0 (0 = không giới hạn)';
   if (!(r.maxSignalAgeMs >= 0)) return 'maxSignalAgeMs phải ≥ 0';
-  if (!(Number.isInteger(r.maxEntriesPerTier) && r.maxEntriesPerTier >= 1))
-    return 'maxEntriesPerTier phải là số nguyên ≥ 1';
+  if (!(Number.isInteger(r.maxEntriesPerTier) && r.maxEntriesPerTier >= 0))
+    return 'maxEntriesPerTier phải là số nguyên ≥ 0 (0 = không giới hạn)';
   if (!(r.oneClickMinPrice >= 0 && r.oneClickMinPrice <= 1))
     return 'oneClickMinPrice phải trong [0, 1] (0 = tắt)';
   if (!(r.maxNetMargin >= 0 && r.maxNetMargin <= 10))
     return 'maxNetMargin phải trong [0, 10] (0 = tắt)';
   if (r.maxNetMargin > 0 && r.maxNetMargin <= r.minNetMargin)
     return 'maxNetMargin phải lớn hơn minNetMargin (hoặc 0 = tắt)';
+  if (!(r.minDailyMargin >= 0 && r.minDailyMargin <= 10))
+    return 'minDailyMargin phải trong [0, 10] (0 = tắt)';
   if (r.markets !== null && r.markets.length > 100)
     return 'markets tối đa 100 market';
   return null;

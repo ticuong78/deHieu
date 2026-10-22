@@ -76,12 +76,19 @@ async function fetchInPage(
   page: Page,
   path: string,
   headers: Record<string, string>,
+  init: { method?: 'GET' | 'POST'; body?: unknown } = {},
 ): Promise<ApiRead> {
   return page.evaluate(
-    async ({ url, headers }) => {
+    async ({ url, headers, method, body }) => {
       const r = await fetch(url, {
+        method,
         credentials: 'include',
-        headers: { Accept: 'application/json', ...headers },
+        headers: {
+          Accept: 'application/json',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...headers,
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       let json: unknown;
       try {
@@ -91,9 +98,12 @@ async function fetchInPage(
       }
       return { status: r.status, json, type: r.headers.get('content-type') };
     },
-    { url: path, headers },
+    { url: path, headers, method: init.method ?? 'GET', body: init.body },
   );
 }
+
+/** Kết quả gọi API csgoempire trong Chrome nền (JSON của chính tài khoản). */
+export type EmpireApiResult = ApiRead;
 
 const norm = (v: string | null | undefined) => v?.trim().toLowerCase() || null;
 
@@ -117,6 +127,8 @@ interface Watched {
   page: Page | null;
   opening: Promise<void> | null;
   reading: Promise<EmpireBalanceSnapshot> | null;
+  /** Lệnh gọi API (nạp/rút) đang chạy: xếp hàng, không chạy chồng với nhau. */
+  calling: Promise<unknown> | null;
   /** Tỷ giá đọc gần nhất (gần như không đổi): dùng lại tới RATES_TTL_MS để mỗi nhịp chỉ 1 request. */
   rates: { read: ApiRead; at: number } | null;
   /** Số lần đọc lỗi liên tiếp → giãn nhịp đọc nền (không dội sàn khi đang bị từ chối). */
@@ -176,6 +188,44 @@ export class EmpireBalanceWatcher {
     return this.read(profile, w, true) as Promise<
       EmpireBalanceSnapshot & { username: string | null; email: string | null }
     >;
+  }
+
+  /**
+   * Gọi API csgoempire bằng Chrome nền của hồ sơ (cùng cookie + header riêng của trang, như trang tự gọi).
+   * Dùng cho nạp/rút tiền. Mở Chrome nếu chưa có; chờ lượt đọc số dư đang chạy xong để không đụng nhau.
+   * Không tự thử lại: request ghi (POST) có thể đã tới sàn.
+   */
+  async call(
+    profile: string,
+    path: string,
+    init: { method?: 'GET' | 'POST'; body?: unknown } = {},
+  ): Promise<EmpireApiResult> {
+    if (!path.startsWith('/api/'))
+      throw new Error('CSGOEMPIRE_API_PATH_INVALID');
+    const w = this.entry(profile);
+    w.wantedUntil = Math.max(w.wantedUntil, Date.now() + this.idleMs);
+    this.start();
+    const run = async () => {
+      if (w.paused) throw new Error('CSGOEMPIRE_LOGIN_IN_PROGRESS');
+      await w.reading?.catch(() => undefined);
+      const page = await this.ensurePage(profile, w);
+      if (!w.headers || !onEmpire(page)) {
+        const { meta } = await this.reloadPage(profile, page, w);
+        if (!good(meta) || !w.headers)
+          throw new Error(
+            `CSGOEMPIRE_API_UNAVAILABLE: trang csgoempire không sẵn sàng (metadata HTTP ${meta.status})`,
+          );
+      }
+      return fetchInPage(page, path, w.headers, init);
+    };
+    const prev = w.calling ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(run);
+    w.calling = next;
+    try {
+      return await next;
+    } finally {
+      if (w.calling === next) w.calling = null;
+    }
   }
 
   /** Nhường hồ sơ (làm mới phiên / đăng nhập sắp mở Chrome trên hồ sơ này). */
@@ -258,6 +308,7 @@ export class EmpireBalanceWatcher {
         page: null,
         opening: null,
         reading: null,
+        calling: null,
         headers: null,
         expected: null,
         blockedBetby: 0,

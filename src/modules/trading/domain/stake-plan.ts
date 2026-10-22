@@ -31,8 +31,10 @@ export interface TierStakeOverride {
   readonly stake?: number;
   readonly minStake?: number;
   readonly maxStake?: number;
-  /** Số lệnh tối đa mỗi cửa ở hạng này (ghi đè mặc định của profile). */
+  /** Số lệnh tối đa mỗi cửa ở hạng này (ghi đè mặc định của profile); 0 = không giới hạn. */
   readonly maxEntries?: number;
+  /** Lãi tối thiểu mỗi ngày khóa vốn ở hạng này (ghi đè risk.minDailyMargin); 0 = tắt cho hạng này. */
+  readonly minDailyMargin?: number;
 }
 
 export interface StakePlan {
@@ -107,6 +109,7 @@ export function resolveStakeTable(
       scaleWithinTier: plan.scaleWithinTier,
       enabled: tierSelected(plan, t.id),
       maxEntries: o.maxEntries ?? null,
+      minDailyMargin: o.minDailyMargin ?? null,
     };
   });
 }
@@ -136,11 +139,16 @@ export function validateStakePlan(plan: StakePlan): string | null {
       o.maxEntries !== undefined &&
       !(
         Number.isInteger(o.maxEntries) &&
-        o.maxEntries >= 1 &&
+        o.maxEntries >= 0 &&
         o.maxEntries <= 100
       )
     )
-      return `override ${id}: maxEntries phải là số nguyên 1–100`;
+      return `override ${id}: maxEntries phải là số nguyên 0–100 (0 = không giới hạn)`;
+    if (
+      o.minDailyMargin !== undefined &&
+      !(o.minDailyMargin >= 0 && o.minDailyMargin <= 10)
+    )
+      return `override ${id}: minDailyMargin phải trong [0, 10]`;
   }
   return null;
 }

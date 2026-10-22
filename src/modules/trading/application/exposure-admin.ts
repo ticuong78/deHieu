@@ -28,7 +28,7 @@ export interface EntryUsageView extends EntryRef {
   readonly profileName: string | null;
   readonly tierName: string | null;
   readonly count: number;
-  /** Số lệnh tối đa hiện cấu hình cho cửa này ở hạng này. */
+  /** Số lệnh tối đa hiện cấu hình cho cửa này ở hạng này; 0 = không giới hạn. */
   readonly max: number | null;
   readonly ttlMs: number | null;
 }

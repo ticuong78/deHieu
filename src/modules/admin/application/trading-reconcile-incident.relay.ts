@@ -29,6 +29,45 @@ export class TradingReconcileIncidentRelay {
             details: { ...e.data },
           },
         );
+      // lệnh thật hủy vì hết tiền ở một bên → sự cố CẢNH BÁO kèm đề xuất chuyển tiền 35/65; bấm
+      // "Đã chuyển xong" → đóng
+      // tự chuyển tiền: lỗi / không rõ kết quả → sự cố NGHIÊM TRỌNG (tự chuyển của profile bị chặn);
+      // chuyển xong hoặc người gỡ chặn → đóng
+      if (e.type === 'trading.rebalance_unblocked')
+        return this._incidents.clear(
+          `trading.rebalance_transfer:${e.data.profileId}`,
+          'unblocked',
+        );
+      if (e.type === 'trading.rebalance_transfer') {
+        const d = e.data;
+        const key = `trading.rebalance_transfer:${d.profileId}`;
+        if (d.state === 'completed')
+          return this._incidents.clear(key, 'completed');
+        if (!['failed', 'unconfirmed', 'unknown'].includes(d.state)) return;
+        return this._incidents.raise(key, {
+          kind: 'trading.rebalance_transfer',
+          severity: d.state === 'failed' ? 'warning' : 'critical',
+          title:
+            d.state === 'failed'
+              ? `Tự chuyển tiền lỗi — profile ${d.profileName}`
+              : `Tự chuyển tiền chưa rõ kết quả — profile ${d.profileName}`,
+          message: `${d.amountUsd.toFixed(2)}$ ${d.fromVenue ?? '?'} → ${d.toVenue ?? '?'}${d.ref ? ` (${d.ref})` : ''}: ${d.reason ?? d.state}.${d.state === 'failed' ? '' : ' Tự chuyển của profile đã DỪNG: kiểm tra tiền trên hai sàn / Polygonscan rồi bấm "Gỡ chặn" ở Auto trade → Cân bằng tiền.'}`,
+          details: { ...d },
+        });
+      }
+      if (e.type === 'trading.rebalanced')
+        return this._incidents.clear(
+          `trading.rebalance:${e.data.profileId}`,
+          'transferred',
+        );
+      if (e.type === 'trading.rebalance_needed')
+        return this._incidents.raise(`trading.rebalance:${e.data.profileId}`, {
+          kind: 'trading.rebalance',
+          severity: 'warning',
+          title: `Cần cân bằng tiền — profile ${e.data.profileName}`,
+          message: `${e.data.summary} Chuyển tay rồi bấm "Đã chuyển xong" ở Auto trade → Cân bằng tiền.`,
+          details: { ...e.data },
+        });
       if (e.type === 'trading.reconciled')
         return this._incidents.clear(`trading.reconcile:${e.data.profileId}`);
       if (e.type !== 'trading.reconcile_required') return;

@@ -1,4 +1,5 @@
 import { targetStake } from '../../../../shared/domain/stake-table.js';
+import { dailyReturn } from '../../../../shared/domain/daily-return.js';
 import { createHash } from 'node:crypto';
 import { AccountLock } from '../../../../shared/infrastructure/trading/account-lock.js';
 import {
@@ -86,6 +87,11 @@ const CONFIG_SKIPS: Readonly<Record<string, (c: TraderConfig) => unknown>> = {
   CAP_REACHED: (c) => [c.matchExposureCapUsd, c.risk.matchCapUsd],
   STALE_SIGNAL: (c) => c.risk.maxSignalAgeMs,
   SUSPICIOUS_MARGIN: (c) => c.risk.maxNetMargin,
+  // hạ ngưỡng lãi/ngày (profile hoặc hạng) → kèo trận xa vào được
+  LOW_DAILY_RETURN: (c) => [
+    c.risk.minDailyMargin,
+    c.stakeTable.map((r) => [r.tierId, r.minDailyMargin]),
+  ],
   // tăng số lệnh mỗi hạng → cửa đang bị chặn được xét lại
   ALREADY_ENTERED: (c) => [
     c.risk.maxEntriesPerTier,
@@ -623,6 +629,15 @@ export class TraderArbitrageTask implements Task<TraderArbitrageParams> {
 
     const book = s.legs.find((l) => l.tenant === 'sptpub');
     const poly = s.legs.find((l) => l.tenant === 'polymarket');
+    // lãi theo ngày khóa vốn: giờ bắt đầu MUỘN NHẤT giữa các chân (không đánh giá thấp thời gian chờ)
+    const startsAt = s.legs.reduce<number | null>(
+      (m, l) =>
+        typeof l.startsAt === 'number' && l.startsAt > (m ?? 0)
+          ? l.startsAt
+          : m,
+      null,
+    );
+    const daily = dailyReturn(s.margin, startsAt, startedAt);
     // chỉ chọn trong các hạng profile được vào: hạng không tick bị loại TRƯỚC khi chọn,
     // nên kèo khớp cả hạng tick lẫn hạng không tick (khoảng chồng nhau) vẫn vào theo hạng tick
     const tierPick = targetStake(
@@ -737,6 +752,7 @@ export class TraderArbitrageTask implements Task<TraderArbitrageParams> {
         detail: {
           signalAgeMs: startedAt - s.issuedAt,
           targetStake: pick?.stake ?? null,
+          ...(daily ? { daily } : {}),
           ...(cancel ? { cancel } : {}),
           ...(manual ? { manual } : {}),
           ...r.detail,
@@ -755,9 +771,13 @@ export class TraderArbitrageTask implements Task<TraderArbitrageParams> {
     };
     type Result = Parameters<typeof build>[2];
     const emit = (status: Status, reason: string | null, r: Result = {}) => {
-      // xét lại theo nhịp / sau khi trả hạn mức mà vẫn bỏ cùng lý do → không ghi thêm dòng
+      // xét lại theo nhịp / sau khi trả hạn mức mà vẫn bỏ cùng lý do → không ghi thêm dòng.
+      // Lãi/ngày thấp: kèo làm mới mỗi vài phút vẫn dưới ngưỡng → chỉ ghi lần đầu (lãi/ngày tăng dần khi
+      // trận tới gần nên vẫn xét lại mỗi lần làm mới, không coi là bộ lọc)
       if (
-        (source === 'recheck' || source === 'exposure') &&
+        (source === 'recheck' ||
+          source === 'exposure' ||
+          reasonCode(reason) === 'LOW_DAILY_RETURN') &&
         prev &&
         status === prev.status &&
         (status === 'error' ||
@@ -823,11 +843,22 @@ export class TraderArbitrageTask implements Task<TraderArbitrageParams> {
           ? `TIER_NOT_SELECTED: margin ${(s.margin * 100).toFixed(2)}% chỉ khớp hạng không được chọn (${other.row.tierName})`
           : `NO_TIER: margin ${(s.margin * 100).toFixed(2)}%`,
       );
+    // ưu tiên kèo lãi cao theo ngày khóa vốn: kèo lãi vài % mà trận còn xa nhiều ngày → bỏ qua để dành
+    // tiền cho kèo trận gần lãi cao. Người bấm vào tay ở On click thì không chặn.
+    const minDaily = pick.row.minDailyMargin ?? cfg.risk.minDailyMargin;
+    if (!manual && minDaily > 0 && daily && daily.perDay + 1e-12 < minDaily)
+      return emit(
+        'skipped',
+        `LOW_DAILY_RETURN: lãi ${(s.margin * 100).toFixed(2)}% ÷ ${daily.days.toFixed(1)} ngày = ${(daily.perDay * 100).toFixed(2)}%/ngày < ${(minDaily * 100).toFixed(2)}%/ngày`,
+        { detail: { minDailyMargin: minDaily } },
+      );
     // mỗi hạng kèo tính riêng: cùng cửa ở hạng này đã đủ số lệnh → bỏ qua (kèo phát lại = signalId mới, vẫn cửa cũ)
-    // số lệnh mỗi cửa: riêng của hạng nếu có, không thì mặc định của profile
-    const max = pick.row.maxEntries ?? cfg.risk.maxEntriesPerTier;
+    // số lệnh mỗi cửa: riêng của hạng nếu có, không thì mặc định của profile; 0 = không giới hạn
+    // (vẫn đếm trong sổ để xem ở Sổ phơi nhiễm)
+    const maxEntries = pick.row.maxEntries ?? cfg.risk.maxEntriesPerTier;
+    const max = maxEntries > 0 ? maxEntries : Number.MAX_SAFE_INTEGER;
     const entryKey = `entry:${profileId}:${s.room}:${s.comboId}:${pick.row.tierId}`;
-    const entered = await deps.ledger.count(entryKey);
+    const entered = maxEntries > 0 ? await deps.ledger.count(entryKey) : 0;
     // đủ số lệnh của hạng → bỏ qua IM LẶNG (không ghi dòng); tăng số lệnh của hạng thì xét lại
     if (entered >= max) return quiet('ALREADY_ENTERED');
     const strategy = TRADE_STRATEGIES[cfg.strategy.id];

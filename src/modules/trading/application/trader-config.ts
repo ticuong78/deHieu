@@ -69,6 +69,7 @@ export function buildTraderConfig(input: {
         markets: [],
         oneClickMinPrice: 0,
         maxNetMargin: 0,
+        minDailyMargin: 0,
       },
       matchExposureCapUsd: settings.matchExposureCapUsd,
     };
