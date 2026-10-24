@@ -139,16 +139,17 @@ export interface RebalanceTransferStore {
  * Mức nạp tối thiểu SÀN của nơi NHẬN (USD). Polymarket: trang nạp ghi "Min $3" cho USDT Polygon (API
  * bridge ghi 2$) — khoản dưới mức không được xử lý, tiền nằm kẹt ở địa chỉ nạp. Lấy max(sàn này, mức API
  * đang công bố) rồi cộng DEPOSIT_MIN_MARGIN để tỷ giá / làm tròn không kéo khoản thực nhận xuống dưới mức.
- * csgoempire: chưa rõ mức tối thiểu, lấy cùng 3$.
+ * csgoempire: nhận được khoản nạp nhỏ (dưới 3$) → không đặt mức tối thiểu (0).
  */
 export const MIN_DEPOSIT_USD: Record<TradingVenue, number> = {
   polymarket: 3,
-  csgoempire: 3,
+  csgoempire: 0,
 };
 export const DEPOSIT_MIN_MARGIN = 0.1;
 
 const DAY = (t: number) => new Date(t).toISOString().slice(0, 10);
 const floor2 = (n: number) => Math.floor(n * 100 + 1e-9) / 100;
+const ceil2 = (n: number) => Math.ceil(n * 100 - 1e-9) / 100;
 const usd = (n: number) => `${n.toFixed(2)}$`;
 const NAME: Record<TradingVenue, string> = {
   csgoempire: 'csgoempire',
@@ -373,7 +374,26 @@ export class RebalanceExecutor {
     );
     t = { ...t, from: plan.from, to: plan.to };
     let amount = floor2(Math.min(plan.amountUsd, cap));
-    if (unit) {
+    if (unit && plan.to === 'csgoempire') {
+      // vào csgoempire không có mức nạp tối thiểu: chỉ chuyển ĐÚNG phần csgoempire còn thiếu để vào thêm
+      // một lệnh đầy đủ (không làm tròn lên "Tối thiểu", không chuyển dư theo tỉ lệ)
+      const have = balances.csgoempire;
+      const next =
+        (Math.floor(have / unit.csgoempire + 1e-9) + 1) * unit.csgoempire;
+      const exact = ceil2(next - have);
+      if (
+        exact > 0 &&
+        exact < amount &&
+        improves(balances, afterTransfer(balances, plan.from, exact), unit)
+      )
+        amount = exact;
+      if (!improves(balances, afterTransfer(balances, plan.from, amount), unit))
+        return skip(
+          amount < plan.amountUsd
+            ? `LIMIT_NO_GAIN: hạn mức chỉ cho chuyển ${usd(Math.max(0, amount))} (cần ${usd(plan.amountUsd)}) — không đủ vào thêm lệnh${usedToday > 0 ? `; hôm nay đã chuyển ${usd(usedToday)}` : ''}`
+            : 'NO_GAIN: chuyển qua lại không vào thêm được lệnh nào',
+        );
+    } else if (unit) {
       // chuyển ít nhất "Tối thiểu" nếu bên chuyển còn dư mà vẫn vào thêm được lệnh (đỡ chuyển lắt nhắt);
       // số tiền sau hạn mức phải còn làm vào thêm được lệnh, không thì không chuyển
       const spare =
@@ -403,9 +423,8 @@ export class RebalanceExecutor {
     const published = await this._gateway
       .depositMinimumUsd?.(plan.to)
       .catch(() => null);
-    const depositMin = floor2(
-      Math.max(MIN_DEPOSIT_USD[plan.to], published ?? 0) + DEPOSIT_MIN_MARGIN,
-    );
+    const floorUsd = Math.max(MIN_DEPOSIT_USD[plan.to], published ?? 0);
+    const depositMin = floorUsd > 0 ? floor2(floorUsd + DEPOSIT_MIN_MARGIN) : 0;
     if (amount < depositMin) {
       const spare =
         plan.from === 'polymarket' ? balances.polymarket : balances.csgoempire;

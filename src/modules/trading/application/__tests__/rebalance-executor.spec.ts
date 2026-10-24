@@ -320,10 +320,11 @@ describe('tự chuyển tiền 35/65', () => {
       });
     });
 
-    it('đủ nhiều lệnh: chia 35/65 vào được 2 lệnh → chuyển về 35/65', async () => {
+    it('sang csgoempire: chỉ chuyển đúng phần còn thiếu cho lệnh kế tiếp, không chia hết về 35/65', async () => {
+      // 35/65 sẽ chuyển 16$; csgoempire chỉ thiếu 5$ cho một lệnh đầy đủ (10$) → chuyển 5$
       const { ex } = setup({ csgoempire: 5, polymarket: 55 }, {}, {}, unit);
       expect(await ex.run('p1', 'manual')).toMatchObject({
-        data: { amountUsd: 16 },
+        data: { to: 'csgoempire', amountUsd: 5 },
       });
     });
 
@@ -369,14 +370,27 @@ describe('tự chuyển tiền 35/65', () => {
       );
     });
 
-    it('cần ít hơn "Tối thiểu" → chuyển tròn lên Tối thiểu khi vẫn vào thêm được lệnh', async () => {
-      // csgoempire 8$ (thiếu 2$ cho lệnh đầy đủ), Polymarket dư → chuyển 5$ (tối thiểu) thay vì 2$
+    it('sang csgoempire dưới "Tối thiểu" và dưới 3$ vẫn chuyển đúng số lệnh cần', async () => {
+      // csgoempire 8$ (thiếu 2$ cho lệnh đầy đủ) → chuyển đúng 2$, không làm tròn lên 5$ / 3,10$
       const { ex } = setup({ csgoempire: 8, polymarket: 22 }, {}, {}, unit);
+      expect(await ex.run('p1', 'manual')).toMatchObject({
+        data: { state: 'completed', to: 'csgoempire', amountUsd: 2 },
+      });
+    });
+
+    it('sang Polymarket dưới "Tối thiểu" → vẫn làm tròn lên (và ≥ mức nạp 3,10$)', async () => {
+      // Polymarket 10$ (thiếu 8$ cho lệnh 18$), csgoempire dư → chuyển ≥ 8$
+      const { ex } = setup(
+        { csgoempire: 30, polymarket: 10 },
+        { minTransferUsd: 1 },
+        {},
+        unit,
+      );
       const r = await ex.run('p1', 'manual');
-      expect(r).toMatchObject({ data: { to: 'csgoempire' } });
+      expect(r).toMatchObject({ data: { to: 'polymarket' } });
       expect(
         (r as { data: { amountUsd: number } }).data.amountUsd,
-      ).toBeGreaterThanOrEqual(2);
+      ).toBeGreaterThanOrEqual(8);
     });
   });
 
