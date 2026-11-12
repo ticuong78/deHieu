@@ -7,6 +7,7 @@ import type {
 } from '../../../application/task.js';
 import { InMemoryExposureLedger } from '../exposure-ledger.js';
 import {
+  isLiveSportEnabled,
   matchOf,
   TraderArbitrageTask,
   type TraderArbitrageParams,
@@ -192,6 +193,7 @@ describe('TraderArbitrageTask (giấy)', () => {
 
   beforeEach(async () => {
     process.env.CONSUMER_WS_TOKEN = TOKEN;
+    vi.stubEnv('TRADING_LIVE_SPORTS', '');
     hub = new FakeHub();
     await new Promise((r) => hub.wss.once('listening', r));
     bookGate = null;
@@ -236,6 +238,7 @@ describe('TraderArbitrageTask (giấy)', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     await hub.close();
   });
 
@@ -263,6 +266,37 @@ describe('TraderArbitrageTask (giấy)', () => {
     expect(trades(t)[0]).toMatchObject({
       status: 'skipped',
       reason: 'SPORT_LIVE_DISABLED: soccer',
+    });
+    await t.stop();
+  });
+
+  it('chỉ bật live cho các môn mới được cho phép riêng', () => {
+    expect(isLiveSportEnabled('cs2', '')).toBe(true);
+    expect(isLiveSportEnabled('soccer', '')).toBe(false);
+    expect(isLiveSportEnabled('soccer', ' basketball, Soccer ')).toBe(true);
+    expect(isLiveSportEnabled('tennis', 'soccer')).toBe(false);
+    expect(isLiveSportEnabled('formula-1', 'formula-1')).toBe(false);
+  });
+
+  it('môn được bật đi tiếp đến bước kiểm tra khả năng thực thi live', async () => {
+    vi.stubEnv('TRADING_LIVE_SPORTS', 'soccer');
+    const t = start(new TraderArbitrageTask(), params('A'));
+    await t.command('config', config('A', { mode: 'live' }));
+    await until(() => hub.consumers.has('trader:A'));
+    hub.broadcast({
+      type: 'signal',
+      kind: 'issued',
+      signal: {
+        ...signal('soccer-enabled'),
+        sport: 'soccer',
+        room: 'room:soccer:alpha~beta:total-goals-2.5',
+        market: 'total-goals-2.5',
+      },
+    });
+    await until(() => trades(t).length > 0);
+    expect(trades(t)[0]).toMatchObject({
+      status: 'skipped',
+      reason: 'LIVE_EXECUTION_UNAVAILABLE',
     });
     await t.stop();
   });

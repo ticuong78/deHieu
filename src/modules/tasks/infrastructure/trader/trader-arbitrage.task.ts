@@ -63,8 +63,25 @@ const CH_ONECLICK = 'oneclick';
 const BOOK_RECHECK_MS = 10_000;
 /** Phơi nhiễm theo trận giữ tối đa ngần này (trận kết thúc / app không giải phóng). */
 const EXPOSURE_TTL_MS = 12 * 3_600_000;
-/** Chỉ bốn môn đã có luồng đặt lệnh thật được kiểm chứng trước khi mở rộng sports. */
-const LIVE_SUPPORTED_SPORTS = new Set(['cs2', 'lol', 'dota2', 'valorant']);
+/** Bốn môn đã bật lệnh thật từ trước; các môn mới cần bật riêng trên worker. */
+const DEFAULT_LIVE_SPORTS = new Set(['cs2', 'lol', 'dota2', 'valorant']);
+const OPT_IN_LIVE_SPORTS = new Set([
+  'soccer',
+  'basketball',
+  'tennis',
+  'american-football',
+  'ice-hockey',
+  'baseball',
+  'mma',
+]);
+
+export const isLiveSportEnabled = (
+  sport: string,
+  enabled = process.env.TRADING_LIVE_SPORTS ?? '',
+): boolean =>
+  DEFAULT_LIVE_SPORTS.has(sport) ||
+  (OPT_IN_LIVE_SPORTS.has(sport) &&
+    enabled.split(',').some((entry) => entry.trim().toLowerCase() === sport));
 
 type Status =
   'paper_filled' | 'filled' | 'partial' | 'skipped' | 'cancelled' | 'error';
@@ -805,7 +822,7 @@ export class TraderArbitrageTask implements Task<TraderArbitrageParams> {
     };
 
     if (!cfg.active) return emit('skipped', `INACTIVE: ${cfg.inactiveReason}`);
-    if (cfg.mode === 'live' && !LIVE_SUPPORTED_SPORTS.has(s.sport))
+    if (cfg.mode === 'live' && !isLiveSportEnabled(s.sport))
       return emit('skipped', `SPORT_LIVE_DISABLED: ${s.sport}`);
     if (cfg.mode === 'live' && (!cfg.execution || !this._executor))
       return emit('skipped', 'LIVE_EXECUTION_UNAVAILABLE');

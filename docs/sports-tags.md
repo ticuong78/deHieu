@@ -39,9 +39,13 @@ Hai nguồn phải cùng có trận, cùng cặp đội, giờ bắt đầu gầ
 kèo**. Tên đội khác nhau (ví dụ tên viết tắt) cần thêm bí danh qua Team Aliases.
 Các market ngoài bảng hỗ trợ tiếp tục được đếm `unsupported_market` hoặc
 `unsupported_line`.
-Các môn truyền thống mới tạo room, tín hiệu và lệnh giấy. Worker chặn lệnh thật
-cho các môn này bằng `SPORT_LIVE_DISABLED` đến khi xác minh quy tắc thanh toán và
-luồng đặt lệnh trên cả hai sàn; bốn môn esports hiện có vẫn có thể giao dịch thật.
+Các môn truyền thống mới tạo room, tín hiệu và lệnh giấy. Mặc định worker chặn
+lệnh thật cho các môn này bằng `SPORT_LIVE_DISABLED`. Để cho phép riêng môn đã
+đối chiếu quy tắc thanh toán và hai cửa trên cả hai sàn, đặt
+`TRADING_LIVE_SPORTS=soccer` (hoặc danh sách mã môn ngăn bằng dấu phẩy) trong môi
+trường của tiến trình chạy trader rồi khởi động lại. Các mã được phép chọn:
+`soccer,basketball,tennis,american-football,ice-hockey,baseball,mma`. Bốn môn
+esports hiện có vẫn có thể giao dịch thật mà không cần biến này.
 
 Bóng đá có kèo thắng trận ba cửa (chủ nhà / hòa / khách), còn engine hiện tính
 kèo hai cửa. Vì vậy translator **không** coi `moneyline` bóng đá là `game-winner`;

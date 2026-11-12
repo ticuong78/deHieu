@@ -2,6 +2,19 @@
 
 Auto trade và nút **Vào lệnh** ở On click dùng chung worker, bảng vốn, chiến lược và giới hạn của profile. Profile cũ và profile mới mặc định là `paper`. Đổi **Chế độ giao dịch** thành **Thật** để worker thực thi API của hai sàn.
 
+Với các môn thể thao mới (như bóng đá), cần cho phép thêm môn đó trong môi trường
+của tiến trình chạy trader. Ví dụ để bật riêng bóng đá:
+
+```dotenv
+TRADING_LIVE_SPORTS=soccer
+```
+
+Đặt biến này trong `.env` trên server hoặc biến môi trường của service chạy backend /
+`task-runner`, triển khai bản code mới và khởi động lại tiến trình đó. Nếu trader
+chạy ở node khác, đặt biến trên node đó. Không cần migrate database. Profile vẫn
+cần ở chế độ **Thật**; các kiểm tra sổ lệnh, hạn mức và số dư vẫn áp dụng. Chỉ bật
+môn sau khi đối chiếu loại kèo, thời gian và quy tắc thanh toán hai sàn.
+
 ## SeleniumBase Chrome qua CDP
 
 Mặc định `launchProfile()` chạy Python để mở Chrome bằng `sb_cdp.Chrome()` của SeleniumBase, rồi TypeScript kết nối bằng `chromium.connectOverCDP()`. Luồng này không tạo Selenium WebDriver/ChromeDriver session. Cài Python và Google Chrome trên máy chạy backend, sau đó:
