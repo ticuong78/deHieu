@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, GitMerge } from 'lucide-react';
+import { toast } from 'sonner';
 import type { MatchCandidate, MatchDetail } from '@/lib/types';
 import { matchHref } from '@/lib/match-links';
 import { fmtDuration, fmtStamp } from '@/lib/format';
@@ -25,11 +26,47 @@ const DISMISS_KEY = 'arbops-dismissed-candidates';
 const cid = (c: MatchCandidate) => `${c.a.match}|${c.b.match}`;
 const scoreTone = (s: number): 'ok' | 'accent' | 'warn' => (s >= 0.85 ? 'ok' : s >= 0.7 ? 'accent' : 'warn');
 
+interface AliasSuggestion {
+  alias: string;
+  canonical: string;
+  similarity: number;
+  matches: number;
+  conflict: boolean;
+  example: string;
+}
+
+function uniqueSuggestions(candidates: MatchCandidate[]): AliasSuggestion[] {
+  const byAlias = new Map<string, AliasSuggestion>();
+  for (const candidate of candidates) {
+    for (const item of candidate.aliases) {
+      const old = byAlias.get(item.alias);
+      if (old) {
+        old.matches++;
+        old.similarity = Math.max(old.similarity, item.similarity);
+        if (old.canonical !== item.canonical) old.conflict = true;
+      } else {
+        byAlias.set(item.alias, {
+          ...item,
+          matches: 1,
+          conflict: false,
+          example: `${candidate.a.teams.join(' vs ')} · ${candidate.a.match.split(':')[0]}`,
+        });
+      }
+    }
+  }
+  return [...byAlias.values()].sort((a, b) => b.similarity - a.similarity || a.alias.localeCompare(b.alias));
+}
+
 export function CandidatesPage() {
   const mobile = useIsMobile();
   const [sport, setSport] = useState('');
   const [minScore, setMinScore] = useState('0.5');
   const [selected, setSelected] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const aliasWriteReason = useGuard('team-aliases:write');
+  const mutate = useMutate();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const qs = new URLSearchParams({ minScore, limit: '50' });
   if (sport) qs.set('sport', sport);
@@ -54,16 +91,47 @@ export function CandidatesPage() {
   };
 
   const list = useMemo(() => (data ?? []).filter((c) => !dismissed.has(cid(c))), [data, dismissed]);
+  const suggestions = useMemo(() => uniqueSuggestions(list), [list]);
+  const eligible = suggestions.filter((s) => !s.conflict);
+  const selectedSuggestions = eligible.filter((s) => picked.has(s.alias));
+  const createBulk = async () => {
+    if (!selectedSuggestions.length) return;
+    setBulkBusy(true);
+    const result = await mutate<{
+      created: { alias: string }[];
+      unchanged: string[];
+      failed: { alias: string; reason: string }[];
+    }>('team-aliases/bulk', {
+      method: 'POST',
+      body: { aliases: selectedSuggestions.map(({ alias, canonical }) => ({ alias, canonical })) },
+    });
+    setBulkBusy(false);
+    if (!result) return;
+    if (result.failed.length) {
+      toast.error(`Đã tạo ${result.created.length}, lỗi ${result.failed.length} bí danh`, {
+        description: result.failed.slice(0, 3).map((f) => `${f.alias}: ${f.reason}`).join('; '),
+      });
+      setPicked(new Set(result.failed.map((f) => f.alias)));
+    } else {
+      toast.success(`Đã tạo ${result.created.length} bí danh${result.unchanged.length ? ` · ${result.unchanged.length} đã có` : ''}`);
+      setPicked(new Set());
+      setBulkOpen(false);
+    }
+    void reload();
+  };
   const current = list.find((c) => cid(c) === selected) ?? (mobile ? null : list[0]) ?? null;
 
   return (
     <div>
       <PageHeader
         title="Ghép trượt"
-        description="Cặp trận có thể là một nhưng không ghép được vì tên đội lệch giữa các tenant. API chỉ hỗ trợ tạo bí danh; ẩn cặp là lựa chọn cục bộ trên trình duyệt."
+        description="Cặp trận có thể là một nhưng không ghép được vì tên đội lệch giữa các tenant. Có thể tạo từng bí danh hoặc chọn nhiều bí danh để tạo cùng lúc; ẩn cặp chỉ có hiệu lực trên trình duyệt này."
         meta={<LiveStamp at={updatedAt} staleAfter={30_000} />}
         actions={
           <>
+            <Button variant="primary" size="sm" disabled={!eligible.length} disabledReason={aliasWriteReason} onClick={() => setBulkOpen(true)}>
+              Tạo bí danh hàng loạt
+            </Button>
             <Select value={sport} onChange={(e) => setSport(e.target.value)} className="w-32" aria-label="Môn">
               <option value="">Mọi môn</option>
               <option value="cs2">CS2</option>
@@ -81,6 +149,52 @@ export function CandidatesPage() {
           </>
         }
       />
+
+      <Confirm
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        title="Tạo bí danh hàng loạt?"
+        description={`Chọn các bí danh cần áp dụng từ ${list.length} cặp đang hiển thị. Mỗi tên chỉ được tạo một lần.`}
+        confirmLabel={`Tạo ${selectedSuggestions.length} bí danh`}
+        confirmDisabled={!selectedSuggestions.length}
+        loading={bulkBusy}
+        onConfirm={() => void createBulk()}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-caption">
+          <span className="text-muted-fg">{selectedSuggestions.length}/{eligible.length} đã chọn</span>
+          <span className="flex flex-wrap justify-end gap-1">
+            <Button variant="ghost" size="sm" onClick={() => setPicked(new Set(eligible.filter((s) => s.similarity >= 0.85).map((s) => s.alias)))}>Chọn ≥ 0.85</Button>
+            <Button variant="ghost" size="sm" onClick={() => setPicked(new Set(eligible.map((s) => s.alias)))}>Chọn tất cả</Button>
+            <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Bỏ chọn</Button>
+          </span>
+        </div>
+        <div className="max-h-[45vh] overflow-y-auto border-y border-line">
+          {suggestions.map((s) => (
+            <label key={s.alias} className="flex items-start gap-3 border-b border-line py-2.5 last:border-0">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+                disabled={s.conflict || bulkBusy}
+                checked={!s.conflict && picked.has(s.alias)}
+                onChange={(e) => setPicked((prev) => {
+                  const next = new Set(prev);
+                  if (e.target.checked) next.add(s.alias);
+                  else next.delete(s.alias);
+                  return next;
+                })}
+              />
+              <span className="min-w-0 text-body">
+                <span className="num break-all text-fg">{s.alias} → {s.canonical}</span>
+                <span className="block text-caption text-muted-fg">
+                  {s.conflict ? 'Tên này có nhiều tên chuẩn khác nhau; xử lý riêng' : `Giống ${s.similarity.toFixed(2)} · ${s.matches} cặp đề xuất`}
+                </span>
+                <span className="block truncate text-caption text-faint">Ví dụ: {s.example}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-3 text-caption text-muted-fg">Các tên đã chọn sẽ được lưu vào database và hệ thống ghép lại các trận đang chạy. Hãy kiểm tra kỹ trước khi tạo.</p>
+      </Confirm>
 
       {error && !data ? <ErrorState message={error} onRetry={reload} /> : null}
       {!data && !error ? <SkeletonRows rows={4} cols={[30, 10]} /> : null}

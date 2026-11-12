@@ -1163,6 +1163,30 @@ export async function mockRequest(
       record('POST', '/admin/incidents/:key/ack', { key }, null);
       return ok(incidentList().find((i) => i.key === key) ?? null);
     }
+    if (path === 'team-aliases/bulk') {
+      const b = body as { aliases?: { alias: string; canonical: string }[] };
+      const norm = (s = '') => s.trim().toLowerCase().replace(/\s+/g, '-');
+      if (!b?.aliases?.length || b.aliases.length > 100) return ok({ message: 'Cần từ 1 đến 100 bí danh' }, 400);
+      const incoming = new Map<string, string>();
+      for (const item of b.aliases) {
+        const alias = norm(item.alias);
+        const canonical = norm(item.canonical);
+        if (!alias || !canonical || alias === canonical) return ok({ message: `Bí danh không hợp lệ: ${item.alias}` }, 400);
+        if (incoming.has(alias) && incoming.get(alias) !== canonical) return ok({ message: `Tên ${alias} có nhiều tên chuẩn` }, 409);
+        const existing = aliases.find((a) => a.alias === alias);
+        if (existing && existing.canonical !== canonical) return ok({ message: `Tên ${alias} đã trỏ tới ${existing.canonical}` }, 409);
+        incoming.set(alias, canonical);
+      }
+      const created: TeamAlias[] = [];
+      const unchanged: string[] = [];
+      for (const [alias, canonical] of incoming) {
+        if (aliases.some((a) => a.alias === alias)) unchanged.push(alias);
+        else created.push({ id: `al-${Date.now()}-${created.length}`, alias, canonical, createdAt: now(), createdBy: 'demo' });
+      }
+      aliases = [...created, ...aliases];
+      record('POST', '/team-aliases/bulk', {}, b, 201);
+      return ok({ created, unchanged, failed: [] }, 201);
+    }
     if (path === 'team-aliases') {
       const b = body as { alias?: string; canonical?: string };
       const norm = (s = '') => s.trim().toLowerCase().replace(/\s+/g, '-');

@@ -169,6 +169,7 @@ export function Confirm({
   description,
   children,
   confirmLabel = 'Xác nhận',
+  confirmDisabled = false,
   tone = 'primary',
   loading,
   onConfirm,
@@ -179,6 +180,7 @@ export function Confirm({
   description?: ReactNode;
   children?: ReactNode;
   confirmLabel?: string;
+  confirmDisabled?: boolean;
   tone?: 'primary' | 'danger';
   loading?: boolean;
   onConfirm: () => void;
@@ -189,7 +191,7 @@ export function Confirm({
       <Button variant="ghost" onClick={() => onOpenChange(false)} size={mobile ? 'lg' : 'md'}>
         Hủy
       </Button>
-      <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm} loading={loading} size={mobile ? 'lg' : 'md'}>
+      <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm} loading={loading} disabled={confirmDisabled} size={mobile ? 'lg' : 'md'}>
         {confirmLabel}
       </Button>
     </>

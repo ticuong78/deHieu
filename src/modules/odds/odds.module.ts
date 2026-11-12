@@ -57,6 +57,7 @@ import { LaneDispatcher } from './application/lane-dispatcher.js';
 import { ListLanesHandler } from './application/queries/list-lanes.query.js';
 import { SweepSignalsHandler } from './application/commands/sweep-signals.command.js';
 import { CreateTeamAliasHandler } from './application/commands/create-team-alias.command.js';
+import { CreateTeamAliasesBulkHandler } from './application/commands/create-team-aliases-bulk.command.js';
 import { DeleteTeamAliasHandler } from './application/commands/delete-team-alias.command.js';
 import { UpdateArbitrageSettingsHandler } from './application/commands/update-arbitrage-settings.command.js';
 import { ControlConsumerHandler } from './application/commands/control-consumer.command.js';
@@ -403,6 +404,19 @@ const EXPIRE_INTERVAL_MS = 60_000;
         n: TeamNameResolver,
         reindex: ReindexTeamAliasesHandler,
       ) => new CreateTeamAliasHandler(r, n, reindex),
+    },
+    {
+      provide: CreateTeamAliasesBulkHandler,
+      inject: [
+        TEAM_ALIAS_REPOSITORY,
+        TeamNameResolver,
+        ReindexTeamAliasesHandler,
+      ],
+      useFactory: (
+        r: TeamAliasRepository,
+        n: TeamNameResolver,
+        reindex: ReindexTeamAliasesHandler,
+      ) => new CreateTeamAliasesBulkHandler(r, n, reindex),
     },
     {
       provide: DeleteTeamAliasHandler,
