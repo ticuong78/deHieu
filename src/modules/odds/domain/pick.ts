@@ -20,6 +20,10 @@ export const pickOf = (key: MatchKey, side: Side): string => {
       return `${key.teams[side]} ${signed(side === 0 ? shape.line : -shape.line)}`;
     case 'total-maps':
       return `${side === 0 ? 'over' : 'under'} ${shape.total}`;
+    case 'total-goals':
+      return `${side === 0 ? 'over' : 'under'} ${shape.total} goals`;
+    case 'both-teams-score':
+      return side === 0 ? 'both teams score: yes' : 'both teams score: no';
     case 'map-winner':
       return `${key.teams[side]} (map ${shape.map})`;
   }

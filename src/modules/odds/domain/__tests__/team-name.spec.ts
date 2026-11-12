@@ -9,6 +9,8 @@ describe('normalizeTeamName', () => {
     ['Team Abyssal', 'Abyssal'],
     ['magic', 'Magic'],
     ['ex-RUBY', 'Ex-RUBY'],
+    ['Arsenal FC', 'Arsenal'],
+    ['Inter Miami CF', 'Inter Miami'],
   ])('"%s" và "%s" cho cùng một khóa', (x, y) => {
     expect(normalizeTeamName(x)).toBe(normalizeTeamName(y));
   });

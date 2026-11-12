@@ -245,6 +245,28 @@ describe('TraderArbitrageTask (giấy)', () => {
     sharedExposure: false,
   });
 
+  it('phát tín hiệu môn mới nhưng chặn đặt lệnh thật trước khi kiểm chứng settlement', async () => {
+    const t = start(new TraderArbitrageTask(), params('A'));
+    await t.command('config', config('A', { mode: 'live' }));
+    await until(() => hub.consumers.has('trader:A'));
+    hub.broadcast({
+      type: 'signal',
+      kind: 'issued',
+      signal: {
+        ...signal('soccer-live'),
+        sport: 'soccer',
+        room: 'room:soccer:alpha~beta:total-goals-2.5',
+        market: 'total-goals-2.5',
+      },
+    });
+    await until(() => trades(t).length > 0);
+    expect(trades(t)[0]).toMatchObject({
+      status: 'skipped',
+      reason: 'SPORT_LIVE_DISABLED: soccer',
+    });
+    await t.stop();
+  });
+
   it('chờ cấu hình rồi mới nối hub; ghi lệnh giấy theo sổ lệnh + phí thật', async () => {
     const t = start(new TraderArbitrageTask(), params('A'));
     await until(() => t.emitted.some((e) => e.channel === 'config_request'));

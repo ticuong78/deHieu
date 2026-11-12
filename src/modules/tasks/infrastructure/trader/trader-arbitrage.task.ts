@@ -63,6 +63,8 @@ const CH_ONECLICK = 'oneclick';
 const BOOK_RECHECK_MS = 10_000;
 /** Phơi nhiễm theo trận giữ tối đa ngần này (trận kết thúc / app không giải phóng). */
 const EXPOSURE_TTL_MS = 12 * 3_600_000;
+/** Chỉ bốn môn đã có luồng đặt lệnh thật được kiểm chứng trước khi mở rộng sports. */
+const LIVE_SUPPORTED_SPORTS = new Set(['cs2', 'lol', 'dota2', 'valorant']);
 
 type Status =
   'paper_filled' | 'filled' | 'partial' | 'skipped' | 'cancelled' | 'error';
@@ -119,6 +121,7 @@ const TRANSIENT_SKIPS = new Set([
  */
 const FILTER_SKIPS = new Set([
   'INACTIVE',
+  'SPORT_LIVE_DISABLED',
   'MARKET_NOT_SELECTED',
   'TIER_NOT_SELECTED',
   'NO_TIER',
@@ -802,6 +805,8 @@ export class TraderArbitrageTask implements Task<TraderArbitrageParams> {
     };
 
     if (!cfg.active) return emit('skipped', `INACTIVE: ${cfg.inactiveReason}`);
+    if (cfg.mode === 'live' && !LIVE_SUPPORTED_SPORTS.has(s.sport))
+      return emit('skipped', `SPORT_LIVE_DISABLED: ${s.sport}`);
     if (cfg.mode === 'live' && (!cfg.execution || !this._executor))
       return emit('skipped', 'LIVE_EXECUTION_UNAVAILABLE');
     if (deps.hub.paused) return emit('skipped', 'HUB_PAUSED');

@@ -20,7 +20,8 @@ import {
 } from './polymarket.dto.js';
 import {
   POLYMARKET_MARKETS,
-  POLYMARKET_SPORTS,
+  polymarketSportOf,
+  supportsPolymarketMarket,
 } from './polymarket-odds.mapping.js';
 import { TournamentOrder } from '../tournament-order.js';
 
@@ -140,9 +141,10 @@ export class PolymarketOddsTranslator implements RawOddsTranslator {
     // đếm thứ tự trận trong giải cho CẢ trang trước, để dòng kèo đầu tiên cũng có tổng số đúng
     for (const raw of page.data) {
       const ev = PolymarketEventSchema.safeParse(raw);
-      const sport = ev.success
-        ? POLYMARKET_SPORTS[ev.data.sports.sport?.sport ?? '']
-        : undefined;
+      const sport =
+        ev.success && ev.data.sports.sport
+          ? polymarketSportOf(ev.data.sports.sport)
+          : null;
       if (!ev.success || !sport) continue;
       const series = ev.data.series?.[0];
       const tourKey = series?.id
@@ -161,14 +163,16 @@ export class PolymarketOddsTranslator implements RawOddsTranslator {
         this._skip(msg.kind, 'parse_failed');
         continue;
       }
-      const sport = POLYMARKET_SPORTS[ev.data.sports.sport?.sport ?? ''];
+      const sport = ev.data.sports.sport
+        ? polymarketSportOf(ev.data.sports.sport)
+        : null;
       if (!sport) {
         this._skip(msg.kind, 'unsupported_sport');
         continue;
       }
       const tourLabel = this._tourLabel(ev.data);
       // market có outcome không phải tên đội (vd totals: Over/Under) lấy cặp đội từ moneyline của event
-      const eventTeams = this._eventTeams(ev.data.markets);
+      const eventTeams = this._eventTeams(ev.data, sport);
 
       for (const rawMarket of ev.data.markets) {
         const parsed = PolymarketMarketSchema.safeParse(rawMarket);
@@ -181,6 +185,10 @@ export class PolymarketOddsTranslator implements RawOddsTranslator {
         const startIso = m.sports.gameStartTime ?? ev.data.schedule.startTime;
         const { yes, no } = m.outcomes;
         if (!mapping) {
+          this._skip(msg.kind, 'unsupported_market');
+          continue;
+        }
+        if (!supportsPolymarketMarket(sport, m.sports.sportsMarketType ?? '')) {
           this._skip(msg.kind, 'unsupported_market');
           continue;
         }
@@ -221,7 +229,7 @@ export class PolymarketOddsTranslator implements RawOddsTranslator {
           }
           yesFirst = true; // yes/no đã là side 0/side 1 (vd over/under), giữ nguyên
         }
-        const market = mapping.toMarket(m, yesFirst);
+        const market = mapping.toMarket(m, yesFirst, sport);
         if (!market) {
           this._skip(msg.kind, 'unsupported_line'); // mức/mốc/số map không hỗ trợ
           continue;
@@ -496,7 +504,7 @@ export class PolymarketOddsTranslator implements RawOddsTranslator {
     const yesFirst =
       mapping.outcomesBy === 'side' ||
       (valid && MatchKey.isFirst(names[0], names[1]));
-    const market = mapping.toMarket(route.sourceMarket, yesFirst);
+    const market = mapping.toMarket(route.sourceMarket, yesFirst, route.sport);
     const key =
       valid && market
         ? MatchKey.of({
@@ -598,8 +606,19 @@ export class PolymarketOddsTranslator implements RawOddsTranslator {
   }
 
   /** Original names from moneyline; retain them so aliases can also be deleted. */
-  private _eventTeams(markets: readonly unknown[]): [string, string] | null {
-    for (const raw of markets) {
+  private _eventTeams(
+    event: {
+      markets: readonly unknown[];
+      sports: { teams?: { name: string }[] | null };
+    },
+    sport: string,
+  ): [string, string] | null {
+    const teams = event.sports.teams;
+    if (sport === 'soccer' && teams?.length === 2) {
+      const [a, b] = teams.map((t) => t.name);
+      if (a && b && a !== b) return [a, b];
+    }
+    for (const raw of event.markets) {
       const p = PolymarketMarketSchema.safeParse(raw);
       if (!p.success || p.data.sports.sportsMarketType !== 'moneyline')
         continue;

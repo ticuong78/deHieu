@@ -1,5 +1,13 @@
 /** Các từ "trang trí" không giúp phân biệt đội (rút ra từ HAR sptpub/polymarket). */
-const NOISE_WORDS = new Set(['team', 'esports', 'esport', 'gaming', 'gg']);
+const NOISE_WORDS = new Set([
+  'team',
+  'esports',
+  'esport',
+  'gaming',
+  'gg',
+  'fc',
+  'cf',
+]);
 
 /**
  * Chuẩn hóa tên đội để so khớp giữa các tenant:

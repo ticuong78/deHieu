@@ -130,6 +130,72 @@ describe('luồng ingest → room → kèo (adapter in-memory)', () => {
     expect([...room.lines.keys()].sort()).toEqual(['polymarket', 'sptpub']);
   });
 
+  it('tạo kèo tổng bàn thắng bóng đá từ hai publisher', async () => {
+    const { ingest, rooms, events } = await setup();
+    await ingest.execute(
+      msg('sptpub', 'sptpub.prematch', {
+        version: 1,
+        events: {
+          'soccer-1': {
+            desc: {
+              scheduled: START / 1000,
+              type: 'match',
+              sport: '1',
+              competitors: [
+                { id: 'a', name: 'Arsenal' },
+                { id: 'b', name: 'Chelsea' },
+              ],
+            },
+            markets: {
+              '18': {
+                'total=2.5': {
+                  '12': { k: '1.35' },
+                  '13': { k: '3.0' },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    await ingest.execute(
+      msg('polymarket', 'polymarket.descriptor', [
+        {
+          id: 'soccer-2',
+          slug: 'epl-ars-che-2026-09-25-more-markets',
+          schedule: { startTime: '2026-09-25T09:10:00Z' },
+          sports: {
+            sport: { sport: 'epl', tags: '1,82,100350' },
+            teams: [{ name: 'Arsenal FC' }, { name: 'Chelsea FC' }],
+          },
+          markets: [
+            {
+              conditionId: '0xsoccer',
+              state: { closed: false, acceptingOrders: true },
+              outcomes: {
+                yes: { label: 'Over', tokenId: 'over' },
+                no: { label: 'Under', tokenId: 'under' },
+              },
+              prices: { bestAsk: '0.45', bestBid: '0.40' },
+              sports: { sportsMarketType: 'totals', line: 2.5 },
+            },
+          ],
+        },
+      ]),
+    );
+
+    const room = await rooms.get(
+      MatchKey.of({
+        sport: 'soccer',
+        teamX: 'arsenal',
+        teamY: 'chelsea',
+        market: 'total-goals-2.5',
+      }),
+    );
+    expect([...room.lines.keys()].sort()).toEqual(['polymarket', 'sptpub']);
+    expect(events.map((e) => e.name)).toContain('arbitrage.signal.issued');
+  });
+
   it('phát kèo khi có lợi nhuận >= 2%, hủy khi một chân bị khóa', async () => {
     const { ingest, events } = await setup();
     // sinners @ sptpub 2.95, alliance @ poly 1/0.48 ≈ 2.083 → ≈ 22% lợi nhuận

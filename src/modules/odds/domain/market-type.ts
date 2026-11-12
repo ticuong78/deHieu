@@ -9,6 +9,8 @@
  * - total-maps-{x}: tổng số map của cả trận. side 0 = over x, side 1 = under x
  *   (không phụ thuộc đội nào đứng trước).
  * - map-{n}-winner: thắng riêng map thứ n. side 0 = teams[0] thắng map n, side 1 = teams[1].
+ * - total-goals-{x}: tổng bàn thắng cả trận bóng đá. side 0 = over x, side 1 = under x.
+ * - both-teams-score: cả hai đội cùng ghi bàn. side 0 = yes, side 1 = no.
  * Chỉ giữ các mức mà ≥ 2 tenant cùng có; mức khác translator bỏ qua
  * vì room chỉ một tenant không bao giờ ra kèo.
  */
@@ -26,6 +28,14 @@ export const MARKET_TYPES = [
   'map-3-winner',
   'map-4-winner',
   'map-5-winner',
+  'total-goals-0.5',
+  'total-goals-1.5',
+  'total-goals-2.5',
+  'total-goals-3.5',
+  'total-goals-4.5',
+  'total-goals-5.5',
+  'total-goals-6.5',
+  'both-teams-score',
 ] as const;
 
 export type MarketType = (typeof MARKET_TYPES)[number];
@@ -47,6 +57,13 @@ export const totalMapsMarket = (total: number): MarketType | null => {
   return isMarketType(id) ? id : null;
 };
 
+/** Mốc bàn thắng cả trận; chỉ nhận các mức đã được cả hai nguồn hỗ trợ. */
+export const totalGoalsMarket = (total: number): MarketType | null => {
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const id = `total-goals-${total}`;
+  return isMarketType(id) ? id : null;
+};
+
 /** Số thứ tự map (1, 2, ...) → market. Không hỗ trợ → null. */
 export const mapWinnerMarket = (mapNumber: number): MarketType | null => {
   if (!Number.isInteger(mapNumber) || mapNumber < 1) return null;
@@ -59,7 +76,9 @@ export type MarketShape =
   /** line = mức chấp của teams[0]. */
   | { readonly kind: 'map-handicap'; readonly line: number }
   | { readonly kind: 'total-maps'; readonly total: number }
-  | { readonly kind: 'map-winner'; readonly map: number };
+  | { readonly kind: 'map-winner'; readonly map: number }
+  | { readonly kind: 'total-goals'; readonly total: number }
+  | { readonly kind: 'both-teams-score' };
 
 /** Đọc ngược market → cấu trúc (để hiển thị, tính pick...). */
 export const describeMarket = (m: MarketType): MarketShape => {
@@ -73,5 +92,8 @@ export const describeMarket = (m: MarketType): MarketShape => {
   if (t) return { kind: 'total-maps', total: Number(t[1]) };
   const w = /^map-(\d+)-winner$/.exec(m);
   if (w) return { kind: 'map-winner', map: Number(w[1]) };
+  const goals = /^total-goals-(\d+(?:\.\d+)?)$/.exec(m);
+  if (goals) return { kind: 'total-goals', total: Number(goals[1]) };
+  if (m === 'both-teams-score') return { kind: 'both-teams-score' };
   return { kind: 'winner' };
 };

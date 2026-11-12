@@ -61,6 +61,7 @@ export const REASON_LABEL: Record<string, string> = {
   NO_TIER: 'Không thuộc hạng nào',
   TIER_NOT_SELECTED: 'Hạng không được chọn',
   MARKET_NOT_SELECTED: 'Market không được chọn',
+  SPORT_LIVE_DISABLED: 'Chưa bật đặt lệnh thật cho môn này',
   INACTIVE: 'Profile đứng yên',
   STALE_SIGNAL: 'Kèo quá cũ',
   SIGNAL_EXPIRED: 'Kèo hết hạn',

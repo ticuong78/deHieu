@@ -70,14 +70,15 @@ Mỗi tenant có 3 khái niệm dữ liệu: **descriptor** (metadata), **live**
 `sptpub.live` / `sptpub.prematch` tự tải lại snapshot ngầm mỗi `resnapshotEveryMs` (mặc định 5s, 0 = tắt), so với bản sao trạng thái giữ trong worker và chỉ phát phần lệch (kênh `resync`): sptpub có lúc đổi/gỡ market mà không gửi delta. Khi nhận snapshot đầy đủ (lúc khởi động, đổi epoch, lỗi), translator gỡ cả trận lẫn market không còn trong snapshot.
 `polymarket.descriptor` và `sptpub.descriptor` chạy được **nhiều** instance (vd mỗi môn một task polymarket với `tagIds` riêng).
 Các kind còn lại chỉ chạy **một** instance (start trùng → `400 KIND_ALREADY_RUNNING`).
-Môn hỗ trợ: CS2, LoL, Dota 2, Valorant (polymarket `cs2`/`lol`/`dota2`/`val`; sptpub sport `109`/`110`/`111`/`194`).
+Môn hỗ trợ và tag IDs: xem [sports-tags.md](./sports-tags.md). Các bảng cho phép môn nằm ở
+`polymarket-odds.mapping.ts` và `sptpub-odds.mapping.ts`; không có bảng database bật môn.
 
 | kind                    | Khái niệm                                          | params                                                                                         |
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `sptpub.descriptor`     | descriptor                                         | `baseUrl`, `brandId`, `lang`, `intervalMs` (60000)                                             |
 | `sptpub.live`           | live                                               | `baseUrl`, `brandId`, `lang`, `intervalMs` (1000), `maxConsecutiveErrors?`, `resnapshotEveryMs` (5000, 0 = tắt)                     |
 | `sptpub.prematch`       | prematch                                           | `baseUrl`, `brandId`, `lang`, `intervalMs` (2000), `maxConsecutiveErrors?`, `resnapshotEveryMs` (5000, 0 = tắt)                     |
-| `polymarket.descriptor` | descriptor (danh sách trận + token)                | `tagIds` (vd `[65]` LoL, `[100780]` CS2, `[102366]` Dota 2, `[101672]` Valorant), `intervalMs` (30000), `live?`, `pageSize?`, `endpoints?` |
+| `polymarket.descriptor` | descriptor (danh sách trận + token)                | `tagIds` (vd `[100350]` bóng đá, `[745]` NBA, `[864]` tennis; danh sách đầy đủ trong sports-tags.md), `intervalMs` (30000), `live?`, `pageSize?`, `endpoints?` |
 | `polymarket.stream`     | live + prematch (app tự tách theo trạng thái trận) | `assetIds?`, `resubscribeDebounceMs?`, `endpoints?` — token do app tự gửi qua lệnh `subscribe` |
 
 `kind` không có trong danh mục → `400 UNKNOWN_KIND`.

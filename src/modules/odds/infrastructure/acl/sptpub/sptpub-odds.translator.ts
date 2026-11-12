@@ -165,7 +165,7 @@ export class SptPubOddsTranslator implements RawOddsTranslator {
         }
 
         for (const [spec, outs] of Object.entries(specs)) {
-          const market = map.toMarket(spec, c1First);
+          const market = map.toMarket(spec, c1First, route.sport);
           if (!market) {
             this._skip(msg.kind, 'unsupported_line'); // specifier/mức không hỗ trợ
             continue;
@@ -266,7 +266,7 @@ export class SptPubOddsTranslator implements RawOddsTranslator {
     const map = SPTPUB_MARKETS[book.marketId];
     const valid = !!names[0] && !!names[1] && names[0] !== names[1];
     const c1First = valid && MatchKey.isFirst(names[0], names[1]);
-    const market = map.toMarket(book.spec, c1First);
+    const market = map.toMarket(book.spec, c1First, route.sport);
     const key =
       valid && market
         ? MatchKey.of({
