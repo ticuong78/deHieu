@@ -2,12 +2,16 @@ import type { OpsEventBus } from '../../../shared/application/ops-event-bus.js';
 import type { TradeAttempt } from './trade-attempt.js';
 import type { PushSender } from './one-click-notifier.js';
 
-/** Lệnh thật làm bot dừng chờ đối soát (lệch chân / không rõ kết quả sau khi đã gửi). */
+/**
+ * Lệnh thật làm bot dừng chờ đối soát (lệch chân / không rõ kết quả sau khi đã gửi). Lệnh bị HỦY vì
+ * profile đang khóa sẵn (lý do = khóa của lệnh trước) không gửi gì lên sàn → không phải lệnh cần đối
+ * soát, không báo lại (báo lại sẽ đè mô tả của lệnh thật cần đối soát).
+ */
 export function needsReconcile(t: TradeAttempt): boolean {
   const code = (t.reason ?? '').split(':')[0].trim();
   return (
     t.mode === 'live' &&
-    (code === 'LIVE_RECONCILIATION_REQUIRED' ||
+    ((code === 'LIVE_RECONCILIATION_REQUIRED' && t.status !== 'cancelled') ||
       (t.status === 'error' && code === 'LIVE_EXECUTION_ERROR'))
   );
 }
@@ -17,6 +21,7 @@ const LEG_STATUS: Record<string, string> = {
   partial: 'khớp một phần',
   accepted: 'đã nhận, chưa khớp',
   rejected: 'không vào',
+  cancelled: 'không gửi',
   error: 'KHÔNG RÕ',
 };
 
@@ -62,7 +67,14 @@ export class ReconcileAlerts {
         type: 'trading.reconcile_required',
         topic: 'alerts',
         at: this._now(),
-        data: { profileId: t.profileId, profileName, tradeId: t.id, summary },
+        data: {
+          profileId: t.profileId,
+          profileName,
+          tradeId: t.id,
+          summary,
+          match: `${t.teams[0]} vs ${t.teams[1]}`,
+          tradeAt: t.createdAt,
+        },
       });
       await this._push?.send({
         title: `Cần đối soát: ${t.teams[0]} vs ${t.teams[1]}`,

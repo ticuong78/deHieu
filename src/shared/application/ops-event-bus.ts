@@ -130,6 +130,10 @@ export type OpsEvent =
         tradeId: string;
         /** "csgoempire: … · Polymarket: …" — chân nào khớp, chân nào lỗi. */
         summary: string;
+        /** "Đội A vs Đội B" của lệnh cần đối soát. */
+        match?: string;
+        /** Lúc vào lệnh (ms) — để tìm đúng lệnh trên csgoempire / Polymarket. */
+        tradeAt?: number;
       }
     >
   | Base<'trading.reconciled', { profileId: string; cleared: number }>

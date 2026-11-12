@@ -76,7 +76,11 @@ export class TradingReconcileIncidentRelay {
         kind: 'trading.reconcile',
         severity: 'critical',
         title: `Cần đối soát lệnh thật — profile ${d.profileName} đã dừng`,
-        message: `${d.summary}. Kiểm tra hai chân trên csgoempire (My bets) và Polymarket (Activity), xử lý chân lẻ nếu có, rồi bấm "Đã đối soát — gỡ khóa" ở trang Auto trade → Profile.`,
+        message: `Lệnh thật${d.match ? ` ${d.match}` : ''}${
+          d.tradeAt
+            ? ` lúc ${new Date(d.tradeAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false })}`
+            : ''
+        } đã GỬI lên sàn nhưng kết quả không trọn: ${d.summary}. Bot dừng profile để không vào thêm lệnh khi chưa rõ tiền / vị thế. Cần làm: (1) mở csgoempire → My bets và Polymarket → Activity, tìm lệnh này theo trận và giờ; (2) nếu chỉ MỘT bên có vị thế (vd có share Polymarket mà không có vé csgoempire) thì bán lại share hoặc đặt bù bên kia; hai bên đều có hoặc đều không thì không cần làm gì; (3) bấm "Đã đối soát — gỡ khóa" ở Auto trade → Profile.`,
         details: { ...d },
       });
     });

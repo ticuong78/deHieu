@@ -56,6 +56,19 @@ describe('báo khi bot dừng chờ đối soát', () => {
       ),
     ).toBe(true);
     expect(needsReconcile(trade({ mode: 'paper' }))).toBe(false);
+    // bị hủy vì profile đang khóa sẵn bởi lệnh trước: không gửi gì → không báo lại
+    expect(
+      needsReconcile(
+        trade({
+          status: 'cancelled',
+          reason: 'LIVE_RECONCILIATION_REQUIRED:9e7ec0f',
+          legs: [
+            leg('csgoempire', 'cancelled'),
+            leg('polymarket', 'cancelled'),
+          ],
+        }),
+      ),
+    ).toBe(false);
     expect(
       needsReconcile(
         trade({ status: 'cancelled', reason: 'POLYMARKET_NOT_FILLED: x' }),

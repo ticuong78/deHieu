@@ -310,7 +310,9 @@ function AccountForm({
     setDepositAddress(e?.config.usdtDepositAddress ?? '');
     setRelayerKey('');
     setRelayerAddress(
-      e?.config.venue === 'polymarket' ? (e.config.relayerApiKeyAddress ?? '') : '',
+      e?.config.venue === 'polymarket'
+        ? (e.config.relayerApiKeyAddress ?? '')
+        : '',
     );
     setPrivateKey('');
     setLoginUsername('');
@@ -337,7 +339,9 @@ function AccountForm({
       : venue === 'polymarket' &&
           depositAddress.trim() &&
           [walletAddress, funderAddress].some(
-            (w) => w.trim() && addr(w).toLowerCase() === addr(depositAddress).toLowerCase(),
+            (w) =>
+              w.trim() &&
+              addr(w).toLowerCase() === addr(depositAddress).toLowerCase(),
           )
         ? 'Đây là ví ký / ví proxy, không phải địa chỉ nạp. Lấy địa chỉ ở Polymarket → Deposit → Crypto → USDT (Polygon).'
         : undefined;
@@ -380,14 +384,20 @@ function AccountForm({
         ? {
             venue,
             browserProfile: browserProfile.trim(),
-            usdtDepositAddress: depositAddress.trim() ? addr(depositAddress) : null,
+            usdtDepositAddress: depositAddress.trim()
+              ? addr(depositAddress)
+              : null,
           }
         : {
             venue,
             walletAddress: addr(walletAddress),
             funderAddress: funderAddress.trim() ? addr(funderAddress) : null,
-            usdtDepositAddress: depositAddress.trim() ? addr(depositAddress) : null,
-            relayerApiKeyAddress: relayerAddress.trim() ? addr(relayerAddress) : null,
+            usdtDepositAddress: depositAddress.trim()
+              ? addr(depositAddress)
+              : null,
+            relayerApiKeyAddress: relayerAddress.trim()
+              ? addr(relayerAddress)
+              : null,
           };
     setBusy(true);
     const r = await mutate(
@@ -570,7 +580,7 @@ function AccountForm({
               label="Địa chỉ ví"
               htmlFor="ac-wallet"
               error={walletErr}
-              help="0x + 40 ký tự hex (thiếu 0x sẽ tự thêm)."
+              help="Ví KÝ sinh ra từ private key bên dưới (vd ví hiện trong MetaMask / ví lúc Export Private Key) — KHÔNG phải địa chỉ ở trang Profile Polymarket (đó là Ví funder)."
             >
               <Input
                 id="ac-wallet"
@@ -584,7 +594,7 @@ function AccountForm({
               label="Ví funder (tùy chọn)"
               htmlFor="ac-funder"
               error={funderErr}
-              help="Ví proxy Polymarket nếu tài khoản đăng nhập bằng email/ví Polymarket; trống = trả bằng chính ví trên."
+              help="Địa chỉ ở trang Profile / Deposit… của Polymarket (ví proxy giữ tiền). Trống = trả bằng chính ví ký."
             >
               <Input
                 id="ac-funder"
@@ -632,7 +642,9 @@ function AccountForm({
                 className="num"
                 value={relayerKey}
                 onChange={(e) => setRelayerKey(e.target.value)}
-                placeholder={editing?.hasRelayerKey ? '•••••• (đang lưu)' : undefined}
+                placeholder={
+                  editing?.hasRelayerKey ? '•••••• (đang lưu)' : undefined
+                }
               />
             </Field>
             <Field

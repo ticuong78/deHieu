@@ -374,7 +374,16 @@ async function polymarketClient(
     ...(relayer ? { apiKey: relayerApiKey(relayer) } : {}),
   });
   if (client.account.signer.toLowerCase() !== c.walletAddress.toLowerCase())
-    throw new Error('POLYMARKET_WALLET_MISMATCH');
+    // địa chỉ công khai, không lộ key: cho biết cần điền gì vào "Địa chỉ ví"
+    throw new Error(
+      `POLYMARKET_WALLET_MISMATCH: key ra ví ${client.account.signer}, đã lưu ${c.walletAddress}${
+        c.funderAddress &&
+        c.funderAddress.toLowerCase() !== client.account.signer.toLowerCase() &&
+        c.walletAddress.toLowerCase() === c.funderAddress.toLowerCase()
+          ? ' (đang điền ví funder / Profile vào "Địa chỉ ví")'
+          : ''
+      } — sửa "Địa chỉ ví" thành ${client.account.signer}`,
+    );
   // Ví funder phải là ví Polymarket (proxy / safe / deposit wallet) SINH RA từ chính private key này.
   // Không khớp thì thư viện coi key là "session key" của một deposit wallet → sàn báo "no deposit
   // wallet found for owner". Báo rõ thay vì để lỗi đó lọt ra.
