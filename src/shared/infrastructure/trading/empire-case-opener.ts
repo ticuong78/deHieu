@@ -1,13 +1,13 @@
 import type { Page } from 'playwright';
 
 export const BONUS_CASES = [
-  'Rust Case',
-  'Bronze Case',
-  'Silver Case',
-  'Gold Case',
-  'Diamond Case',
-  'Uranium Case',
   'Unbreakable Case',
+  'Uranium Case',
+  'Diamond Case',
+  'Gold Case',
+  'Silver Case',
+  'Bronze Case',
+  'Rust Case',
 ] as const;
 
 /**
@@ -42,7 +42,7 @@ export class EmpireCaseOpener {
       text = await daily.innerText();
       if (!/Risk level\s*Medium\b/i.test(text))
         throw new Error('CSGOEMPIRE_DAILY_RISK_NOT_MEDIUM');
-      if (await this.clickAvailableOpen(daily)) opened.push('Daily Case (Medium)');
+      if (await this.openDaily(page, daily)) opened.push('Daily Case (Medium)');
     }
     if (options.bonus) {
       for (const name of BONUS_CASES) {
@@ -52,19 +52,77 @@ export class EmpireCaseOpener {
         const text = await card.innerText();
         const keys = Number(text.match(/\bCase\s+(\d+)\b/)?.[1] ?? 0);
         if (keys < 1) continue;
-        if (await this.clickAvailableOpen(card)) opened.push(name);
+        // Giữ ưu tiên tier cao: còn key ở tier này thì chờ cooldown,
+        // không chuyển xuống tier thấp trong cùng lượt.
+        if (await this.openBonus(page, card, name, keys)) opened.push(name);
+        break;
       }
     }
     return opened;
   }
 
-  private async clickAvailableOpen(card: ReturnType<Page['locator']>) {
-    const button = card.getByRole('button', { name: /^Open(?: Case)?$/i }).first();
-    if (!(await button.isVisible().catch(() => false))) return false;
-    if (!(await button.isEnabled())) return false;
+  private async availableButton(card: ReturnType<Page['locator']>) {
+    const button = card
+      .getByRole('button', { name: /^Open(?: Case)?$/i })
+      .first();
+    if (!(await button.isVisible().catch(() => false))) return null;
+    return (await button.isEnabled()) ? button : null;
+  }
+
+  private async openBonus(
+    page: Page,
+    card: ReturnType<Page['locator']>,
+    name: string,
+    keys: number,
+  ): Promise<boolean> {
+    const button = await this.availableButton(card);
+    if (!button) return false;
+    // Nút trên thẻ chỉ mở cửa sổ chi tiết; key chưa được dùng ở bước này.
     await button.click({ timeout: 10_000 });
-    // Cho trang cập nhật cooldown trước khi kiểm tra rương kế tiếp.
-    await card.page().waitForTimeout(1_000);
-    return true;
+    await page.getByRole('heading', { name, exact: true, level: 2 }).waitFor({
+      state: 'visible',
+      timeout: 10_000,
+    });
+    const confirm = page.locator('#rewards-open-case');
+    await confirm.waitFor({ state: 'visible', timeout: 10_000 });
+    if (!(await confirm.isEnabled()))
+      throw new Error(`CSGOEMPIRE_CASE_NOT_READY: ${name}`);
+    await confirm.click({ timeout: 10_000 });
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const remaining = Number(
+        (await card.innerText()).match(/\bCase\s+(\d+)\b/)?.[1] ?? keys,
+      );
+      if (remaining < keys) return true;
+      await page.waitForTimeout(1_000);
+    }
+    throw new Error(`CSGOEMPIRE_CASE_OPEN_NOT_CONFIRMED: ${name}`);
+  }
+
+  private async openDaily(
+    page: Page,
+    card: ReturnType<Page['locator']>,
+  ): Promise<boolean> {
+    const button = await this.availableButton(card);
+    if (!button) return false;
+    await button.click({ timeout: 10_000 });
+    // Daily có thể mở trực tiếp hoặc mở trang chi tiết trước khi xác nhận.
+    await page.waitForTimeout(500);
+    const confirm = page.locator('#rewards-open-case');
+    if (await confirm.isVisible().catch(() => false)) {
+      await page
+        .getByRole('heading', { name: 'Daily Case', exact: true, level: 2 })
+        .waitFor({
+          state: 'visible',
+          timeout: 10_000,
+        });
+      if (!(await confirm.isEnabled()))
+        throw new Error('CSGOEMPIRE_DAILY_NOT_READY');
+      await confirm.click({ timeout: 10_000 });
+    }
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (/Open in\s*\d/i.test(await card.innerText())) return true;
+      await page.waitForTimeout(1_000);
+    }
+    throw new Error('CSGOEMPIRE_DAILY_OPEN_NOT_CONFIRMED');
   }
 }
