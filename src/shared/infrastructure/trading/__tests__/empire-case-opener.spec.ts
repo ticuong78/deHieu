@@ -35,7 +35,7 @@ describe('EmpireCaseOpener', () => {
     ).toEqual(['Daily Case (Medium)']);
   });
 
-  it('xác nhận trong cửa sổ chi tiết, rồi mới tính là đã mở và ưu tiên tier cao', async () => {
+  it('mở mọi rương đang sẵn sàng, ưu tiên tier cao ở mỗi lượt và xác nhận key giảm', async () => {
     const keys = new Map([
       ['Bronze Case', 2],
       ['Rust Case', 3],
@@ -89,7 +89,10 @@ describe('EmpireCaseOpener', () => {
           if (!modal) throw new Error('missing detail');
           confirmed.push(modal);
           keys.set(modal, (keys.get(modal) ?? 0) - 1);
-          ready.set(modal, false);
+          ready.set(
+            modal,
+            modal === 'Bronze Case' && (keys.get(modal) ?? 0) > 0,
+          );
           modal = null;
           return Promise.resolve();
         },
@@ -100,18 +103,25 @@ describe('EmpireCaseOpener', () => {
 
     expect(await opener.open(page, { daily: false, bonus: true })).toEqual([
       'Bronze Case',
+      'Rust Case',
+      'Bronze Case',
     ]);
-    expect(confirmed).toEqual(['Bronze Case']);
-    expect(keys.get('Rust Case')).toBe(3);
+    expect(confirmed).toEqual(['Bronze Case', 'Rust Case', 'Bronze Case']);
+    expect(keys.get('Rust Case')).toBe(2);
 
-    // Bronze vẫn còn key nhưng đang cooldown: không mở tier Rust thấp hơn.
+    // Không còn nút Open khả dụng, dù Rust vẫn còn key.
     expect(await opener.open(page, { daily: false, bonus: true })).toEqual([]);
-    expect(confirmed).toEqual(['Bronze Case']);
+    expect(confirmed).toEqual(['Bronze Case', 'Rust Case', 'Bronze Case']);
 
-    keys.set('Bronze Case', 0);
+    ready.set('Rust Case', true);
     expect(await opener.open(page, { daily: false, bonus: true })).toEqual([
       'Rust Case',
     ]);
-    expect(confirmed).toEqual(['Bronze Case', 'Rust Case']);
+    expect(confirmed).toEqual([
+      'Bronze Case',
+      'Rust Case',
+      'Bronze Case',
+      'Rust Case',
+    ]);
   });
 });

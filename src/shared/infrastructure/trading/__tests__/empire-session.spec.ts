@@ -46,6 +46,7 @@ function setup(lifetimeMinutes = 30) {
   const page = {
     on: vi.fn(),
     off: vi.fn(),
+    close: vi.fn(() => Promise.resolve()),
     isClosed: () => false,
     getByRole: (_role: string) => absent,
     getByText: (_text: RegExp) => absent,
@@ -79,6 +80,7 @@ function setup(lifetimeMinutes = 30) {
   mocks.launch.mockImplementation(() =>
     Promise.resolve({
       pages: () => [page],
+      newPage: () => Promise.resolve(page),
       cookies: () => Promise.resolve([{ name: 'unit-session', value: 'test' }]),
       clearCookies,
       close,
@@ -646,6 +648,7 @@ describe('csgoempire session refresh', () => {
       };
       mocks.launch.mockResolvedValue({
         pages: () => [page],
+        newPage: () => Promise.resolve(page),
         cookies: () =>
           Promise.resolve([{ name: 'unit-session', value: 'test' }]),
         close: s.close,
@@ -814,6 +817,56 @@ describe('nhiều tài khoản / nhiều lời gọi cùng lúc', () => {
     expect(manual.token).not.toBe(bg.token);
     expect(mocks.launch).toHaveBeenCalledTimes(2);
     expect(maxOpen).toBe(1);
+  });
+
+  it('hủy lần lấy phiên với mật khẩu cũ trước khi mở Chrome cho mật khẩu mới', async () => {
+    const s = setup();
+    const launch = mocks.launch.getMockImplementation()!;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    mocks.launch.mockImplementationOnce(
+      (_path: string, { signal }: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new Error('cancelled')),
+            { once: true },
+          );
+          entered();
+        }),
+    );
+    mocks.launch.mockImplementation((...args: unknown[]) =>
+      (launch as (...a: unknown[]) => Promise<unknown>)(...args),
+    );
+    const old = s.sessions.get('changed-password', {
+      credentialsVersion: 'old',
+    });
+    const cancelled = expect(old).rejects.toThrow('CSGOEMPIRE_LOGIN_CANCELLED');
+    await started;
+    const fresh = await s.sessions.get('changed-password', {
+      credentialsVersion: 'new',
+    });
+    await cancelled;
+    expect(fresh.token).toMatch(/^test\./);
+    expect(mocks.launch).toHaveBeenCalledTimes(2);
+    expect(s.sessions.sessionFailures('changed-password')).toBeNull();
+  });
+
+  it('đóng các tab được Chrome khôi phục trước khi đọc phiên', async () => {
+    const s = setup();
+    const launch = mocks.launch.getMockImplementation()!;
+    const oldTabs = [
+      { close: vi.fn(() => Promise.resolve()) },
+      { close: vi.fn(() => Promise.resolve()) },
+    ];
+    mocks.launch.mockImplementation((...args: unknown[]) =>
+      (launch as (...a: unknown[]) => Promise<Record<string, unknown>>)(
+        ...args,
+      ).then((context) => ({ ...context, pages: () => oldTabs })),
+    );
+    await s.sessions.get('restored-tabs');
+    expect(oldTabs[0].close).toHaveBeenCalledOnce();
+    expect(oldTabs[1].close).toHaveBeenCalledOnce();
   });
 });
 

@@ -5,6 +5,7 @@ import { httpDiagnostics } from './shared/presentation/http-diagnostics.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
   app.use(
     httpDiagnostics({
       logSuccess: process.env.HTTP_DIAGNOSTICS_LOG_SUCCESS === 'true',

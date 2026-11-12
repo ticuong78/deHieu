@@ -20,14 +20,7 @@ export class EmpireCaseOpener {
     page: Page,
     options: { daily: boolean; bonus: boolean },
   ): Promise<string[]> {
-    await page.goto('https://csgoempire.com/rewards', {
-      waitUntil: 'domcontentloaded',
-      timeout: 45_000,
-    });
-    await page.getByText('Choose your daily case', { exact: true }).waitFor({
-      state: 'visible',
-      timeout: 30_000,
-    });
+    await this.visitRewards(page);
     const opened: string[] = [];
     if (options.daily) {
       const daily = page
@@ -42,23 +35,44 @@ export class EmpireCaseOpener {
       text = await daily.innerText();
       if (!/Risk level\s*Medium\b/i.test(text))
         throw new Error('CSGOEMPIRE_DAILY_RISK_NOT_MEDIUM');
-      if (await this.openDaily(page, daily)) opened.push('Daily Case (Medium)');
-    }
-    if (options.bonus) {
-      for (const name of BONUS_CASES) {
-        const label = page.getByText(name, { exact: true }).first();
-        if (!(await label.isVisible().catch(() => false))) continue;
-        const card = label.locator('xpath=ancestor::*[.//button][1]');
-        const text = await card.innerText();
-        const keys = Number(text.match(/\bCase\s+(\d+)\b/)?.[1] ?? 0);
-        if (keys < 1) continue;
-        // Giữ ưu tiên tier cao: còn key ở tier này thì chờ cooldown,
-        // không chuyển xuống tier thấp trong cùng lượt.
-        if (await this.openBonus(page, card, name, keys)) opened.push(name);
-        break;
+      if (await this.openDaily(page, daily)) {
+        opened.push('Daily Case (Medium)');
+        if (options.bonus) await this.visitRewards(page);
       }
     }
+    if (options.bonus) {
+      let openedThisPass: boolean;
+      do {
+        openedThisPass = false;
+        for (const name of BONUS_CASES) {
+          const label = page.getByText(name, { exact: true }).first();
+          if (!(await label.isVisible().catch(() => false))) continue;
+          const card = label.locator('xpath=ancestor::*[.//button][1]');
+          const text = await card.innerText();
+          const keys = Number(text.match(/\bCase\s+(\d+)\b/)?.[1] ?? 0);
+          if (keys < 1) continue;
+          // Tier đang cooldown không chặn các tier thấp hơn.
+          if (!(await this.openBonus(page, card, name, keys))) continue;
+          opened.push(name);
+          openedThisPass = true;
+          // Trang chi tiết/kết quả có thể che các thẻ khác. Tải lại Rewards để
+          // lấy key và trạng thái cooldown mới trước khi xét tier tiếp theo.
+          await this.visitRewards(page);
+        }
+      } while (openedThisPass);
+    }
     return opened;
+  }
+
+  private async visitRewards(page: Page) {
+    await page.goto('https://csgoempire.com/rewards', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+    await page.getByText('Choose your daily case', { exact: true }).waitFor({
+      state: 'visible',
+      timeout: 30_000,
+    });
   }
 
   private async availableButton(card: ReturnType<Page['locator']>) {

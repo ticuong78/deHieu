@@ -125,6 +125,49 @@ describe('headed browser login jobs', () => {
     await provider.onApplicationShutdown();
   });
 
+  it('thay lần đăng nhập đang chạy khi tài khoản đổi mật khẩu', async () => {
+    const { account, provider } = setup();
+    mocks.get.mockImplementation(
+      (
+        _name: string,
+        options: { signal: AbortSignal; credentials: EmpireCredentials },
+      ) =>
+        options.credentials.password === 'new-password'
+          ? Promise.resolve({
+              token: 'new-token',
+              expiresAt: Date.now() + 60_000,
+            })
+          : new Promise((_, reject) => {
+              options.signal.addEventListener(
+                'abort',
+                () => reject(new Error('CSGOEMPIRE_LOGIN_CANCELLED')),
+                { once: true },
+              );
+            }),
+    );
+    const first = provider.startLogin(account);
+    await vi.waitFor(() => expect(mocks.get).toHaveBeenCalledOnce());
+    const changed = {
+      ...account,
+      secretCipher: new AesGcmSecretCipher(
+        process.env.TRADING_SECRET_KEY,
+      ).encrypt(
+        JSON.stringify({ username: 'user-test', password: 'new-password' }),
+      ),
+    };
+    const second = provider.startLogin(changed);
+    expect(second.attemptId).not.toBe(first.attemptId);
+    await vi.waitFor(() =>
+      expect(provider.loginStatus('empire-test')?.stage).toBe('ready'),
+    );
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(
+      (mocks.get.mock.calls[0][1] as { signal: AbortSignal }).signal.aborted,
+    ).toBe(true);
+    expect(provider.takeJwtPreview('empire-test', first.attemptId!)).toBeNull();
+    await provider.onApplicationShutdown();
+  });
+
   it('only returns the JWT once through its matching login attempt, never through status polling', async () => {
     const { account, provider } = setup();
     const expiresAt = Date.now() + 30 * 60_000;
@@ -223,6 +266,47 @@ describe('headed browser login jobs', () => {
     expect(
       provider.takeJwtPreview('empire-test', started.attemptId!),
     ).toBeNull();
+    await provider.onApplicationShutdown();
+  });
+});
+
+describe('mở rương theo tài khoản đã lưu', () => {
+  it('chỉ mở khi metadata khớp tài khoản và không cần JWT BetBy', async () => {
+    const { account, provider } = setup();
+    const readNow = vi.fn().mockResolvedValue({
+      username: 'other-user',
+      email: null,
+    });
+    const open = vi.fn().mockResolvedValue(['Rust Case']);
+    const withPage = vi.fn(
+      (_profile: string, run: (page: object) => Promise<string[]>) => run({}),
+    );
+    Object.assign(provider, {
+      locks: {
+        with: vi.fn((_keys: string[], run: () => Promise<string[]>) => run()),
+        close: vi.fn(),
+      },
+      balances: { readNow, withPage, closeAll: vi.fn() },
+      caseOpener: { open },
+    });
+    const enabled: TradingAccount = {
+      ...account,
+      config: {
+        venue: 'csgoempire',
+        browserProfile: 'empire-test',
+        autoBonusCases: true,
+      },
+    };
+    await expect(provider.openRewardCases(enabled)).rejects.toThrow(
+      'CSGOEMPIRE_CASE_ACCOUNT_UNVERIFIED',
+    );
+    expect(withPage).not.toHaveBeenCalled();
+    readNow.mockResolvedValue({ username: 'user-test', email: null });
+    await expect(provider.openRewardCases(enabled)).resolves.toEqual([
+      'Rust Case',
+    ]);
+    expect(open).toHaveBeenCalledOnce();
+    expect(mocks.get).not.toHaveBeenCalled();
     await provider.onApplicationShutdown();
   });
 });

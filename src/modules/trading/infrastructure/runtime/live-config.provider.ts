@@ -50,6 +50,7 @@ export class LiveConfigProvider
     string,
     {
       state: EmpireLoginStatus;
+      credentialsVersion: string;
       abort: AbortController;
       done: Promise<void>;
       preview?: EmpireJwtPreview & { availableUntil: number };
@@ -171,16 +172,21 @@ export class LiveConfigProvider
     if (account.config.venue !== 'csgoempire')
       throw new Error('CSGOEMPIRE_ACCOUNT_UNAVAILABLE');
     const profile = account.config.browserProfile;
+    const credentialsVersion = this.version(account);
     const previous = this.jobs.get(profile);
     if (
       previous &&
       ['opening', 'signing_in', 'obtaining_session'].includes(
         previous.state.stage,
       )
-    )
-      return previous.state;
+    ) {
+      if (previous.credentialsVersion === credentialsVersion)
+        return previous.state;
+      previous.abort.abort();
+    }
     const job: {
       state: EmpireLoginStatus;
+      credentialsVersion: string;
       abort: AbortController;
       done: Promise<void>;
       preview?: EmpireJwtPreview & { availableUntil: number };
@@ -193,6 +199,7 @@ export class LiveConfigProvider
         attemptId: randomUUID(),
         jwtAvailable: false,
       },
+      credentialsVersion,
       abort: new AbortController(),
       done: Promise.resolve(),
     };
@@ -208,7 +215,7 @@ export class LiveConfigProvider
           throw new Error('CSGOEMPIRE_LOGIN_CREDENTIALS_MISSING');
         const session = await this.sessions.get(profile, {
           credentials,
-          credentialsVersion: this.version(account),
+          credentialsVersion,
           headed: true,
           force: true,
           signal: job.abort.signal,
@@ -219,10 +226,12 @@ export class LiveConfigProvider
             job.state = { ...job.state, diagnostic, updatedAt: Date.now() };
           },
         });
+        job.abort.signal.throwIfAborted();
         await this.locks.clearHalt(
           [accountResource('csgoempire', profile)],
           SESSION_EXPIRED,
         );
+        job.abort.signal.throwIfAborted();
         job.preview = {
           token: session.token,
           expiresAt: session.expiresAt,
@@ -430,32 +439,37 @@ export class LiveConfigProvider
 
   /** Mở các rương thưởng đã đến hạn, trên đúng hồ sơ tài khoản đã lưu. */
   async openRewardCases(account: TradingAccount): Promise<string[]> {
-    if (account.config.venue !== 'csgoempire' || !account.enabled)
-      return [];
+    if (account.config.venue !== 'csgoempire' || !account.enabled) return [];
     const { autoDailyCase, autoBonusCases, browserProfile } = account.config;
     if (!autoDailyCase && !autoBonusCases) return [];
-    if (!this.sessions || !this.balances || !this.locks)
-      throw new Error('LIVE_REDIS_REQUIRED');
+    if (!this.balances || !this.locks) throw new Error('LIVE_REDIS_REQUIRED');
     if (!process.env.TRADING_SECRET_KEY)
       throw new Error('TRADING_SECRET_KEY_REQUIRED');
     const credentials = this.credentials(account);
-    if (!credentials)
-      throw new Error('CSGOEMPIRE_LOGIN_CREDENTIALS_REQUIRED');
-    await this.sessions.get(browserProfile, {
-      credentials,
-      credentialsVersion: this.version(account),
-    });
-    // Kiểm tra tài khoản trước khi bấm bất cứ nút Open nào.
-    await this.balances.readNow(browserProfile, credentials?.username ?? null);
+    if (!credentials) throw new Error('CSGOEMPIRE_LOGIN_CREDENTIALS_REQUIRED');
     return this.locks.with(
       [accountResource('csgoempire', browserProfile)],
-      () =>
-        this.balances!.withPage(browserProfile, (page) =>
+      async () => {
+        // Mở rương trên Rewards không cần JWT BetBy. Kiểm tra danh tính từ
+        // metadata ngay trong khóa tài khoản, rồi mới bấm bất cứ nút Open nào.
+        const balance = await this.balances!.readNow(
+          browserProfile,
+          credentials.username,
+        );
+        const expected = credentials.username.trim().toLowerCase();
+        if (
+          ![balance.username, balance.email].some(
+            (value) => value?.trim().toLowerCase() === expected,
+          )
+        )
+          throw new Error('CSGOEMPIRE_CASE_ACCOUNT_UNVERIFIED');
+        return this.balances!.withPage(browserProfile, (page) =>
           this.caseOpener.open(page, {
             daily: autoDailyCase === true,
             bonus: autoBonusCases === true,
           }),
-        ),
+        );
+      },
     );
   }
   // ------------------------------------------------------------- tự chuyển tiền (RebalanceGateway)

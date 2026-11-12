@@ -360,7 +360,14 @@ export async function loginReady(name: string) {
 export class EmpireSessions {
   private readonly cache = new Map<string, CacheEntry>();
   /** Lần làm mới đang chạy theo hồ sơ: lời gọi trùng dùng chung, không mở Chrome thứ hai. */
-  private readonly inflight = new Map<string, Promise<EmpireSession>>();
+  private readonly inflight = new Map<
+    string,
+    {
+      revision: string;
+      promise: Promise<EmpireSession>;
+      abort: AbortController;
+    }
+  >();
   constructor(
     private readonly locks: AccountLock,
     /** Báo khi làm mới hỏng tạm thời và đang dùng tiếp token cũ (để ghi log). */
@@ -478,16 +485,26 @@ export class EmpireSessions {
         return cached.session;
     }
     let running = this.inflight.get(browserProfile);
-    if (running && !options.force) return running;
-    // đăng nhập tay (force) đợi lần làm mới nền xong rồi mới mở Chrome của mình
+    if (running && running.revision === revision && !options.force)
+      return running.promise;
+    // Khi tài khoản/mật khẩu đổi, hủy lần lấy phiên đang dùng thông tin cũ.
+    // Lần đăng nhập tay cùng phiên bản vẫn chờ để không mở hai Chrome cùng hồ sơ.
     while (running) {
-      await running.catch(() => undefined);
+      if (running.revision !== revision) running.abort.abort();
+      await running.promise.catch(() => undefined);
       running = this.inflight.get(browserProfile);
+      if (running?.revision === revision && !options.force)
+        return running.promise;
     }
-    const job = this.refresh(
+    const abort = new AbortController();
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, abort.signal])
+      : abort.signal;
+    const effectiveOptions = { ...options, signal };
+    const promise = this.refresh(
       browserProfile,
       revision,
-      options,
+      effectiveOptions,
       this.cache.get(browserProfile),
     ).then(
       (session) => {
@@ -499,14 +516,15 @@ export class EmpireSessions {
         return session;
       },
       (e: unknown) => {
-        if (!options.force && !options.signal?.aborted)
+        if (!options.force && !signal.aborted)
           this.countFailure(browserProfile, revision, e);
         throw e;
       },
     );
+    const job = { revision, promise, abort };
     this.inflight.set(browserProfile, job);
     try {
-      return await job;
+      return await promise;
     } finally {
       if (this.inflight.get(browserProfile) === job)
         this.inflight.delete(browserProfile);
@@ -639,7 +657,14 @@ export class EmpireSessions {
           });
           signal.addEventListener('abort', onAbort, { once: true });
           signal.throwIfAborted();
-          const page = context.pages()[0] ?? (await context.newPage());
+          const startupPages = context.pages();
+          const page = await context.newPage();
+          await Promise.allSettled(
+            startupPages
+              .filter((candidate) => candidate !== page)
+              .map((candidate) => candidate.close()),
+          );
+          signal.throwIfAborted();
           // Ghi lại các API csgoempire mà CHÍNH trang gọi (đường dẫn + mã HTTP, không lưu nội dung),
           // và giữ phản hồi /api/v2/metadata (người dùng) của trang nếu có.
           const seen = observeSiteApi(page);
@@ -947,10 +972,12 @@ export class EmpireSessions {
           // ghi dấu SAU loginReady để khớp revision hiện tại của hồ sơ
           if (options.credentials)
             await markVerified(browserProfile, options.credentials.username);
+          const cacheRevision = options.headed
+            ? `${await readRevision(browserProfile)}:${options.credentialsVersion ?? ''}`
+            : revision;
+          signal.throwIfAborted();
           this.cache.set(browserProfile, {
-            revision: options.headed
-              ? `${await readRevision(browserProfile)}:${options.credentialsVersion ?? ''}`
-              : revision,
+            revision: cacheRevision,
             session,
             // Refresh normal 30-minute tokens with 10 minutes left. If the
             // provider issues a shorter token, avoid refreshing on every poll.

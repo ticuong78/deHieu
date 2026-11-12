@@ -4,7 +4,7 @@ Trong **Auto trade → Tài khoản**, sửa tài khoản CSGOEmpire và bật r
 
 Backend kiểm tra mỗi 5 phút (lần đầu khoảng 45 giây sau khi khởi động) qua trang `https://csgoempire.com/rewards` trên đúng hồ sơ Chromium của tài khoản. Cần `REDIS_URL`, `TRADING_SECRET_KEY`, thông tin đăng nhập đã lưu và phiên CSGOEmpire hoạt động. Nếu trang không xác nhận đúng tài khoản, mức Medium hoặc trạng thái có thể mở, lượt đó bỏ qua và ghi lý do vào log `Trading`.
 
-Bonus Case được xét từ **Unbreakable → Uranium → Diamond → Gold → Silver → Bronze → Rust**. Mỗi lượt chỉ mở một Bonus Case ở cấp cao nhất còn key; nếu cấp đó đang chờ cooldown thì đợi, không chuyển xuống cấp thấp. Nút **Open Case** trên thẻ chỉ mở cửa sổ chi tiết. App bấm nút mở trong cửa sổ đó và chỉ ghi nhận đã mở khi số key giảm.
+Bonus Case được xét từ **Unbreakable → Uranium → Diamond → Gold → Silver → Bronze → Rust**. App mở từng rương có key và nút Open đang khả dụng theo thứ tự đó; rương cấp cao đang cooldown không chặn rương cấp thấp. Sau khi mở một rương, app tải lại trang để cập nhật trạng thái, tiếp tục đến hết danh sách rồi xét lại từ đầu cho tới khi không còn rương nào mở được. Nút **Open Case** trên thẻ chỉ mở cửa sổ chi tiết. App bấm nút mở trong cửa sổ đó và chỉ ghi nhận đã mở khi số key giảm.
 
 Chức năng chỉ bấm nút **Open** của rương thưởng. Nó không mua key, không bấm **Cash Out**, không bán hay chuyển vật phẩm. Không có migration database vì hai lựa chọn được lưu trong `trading_accounts.config` (JSONB). Khi CSGOEmpire thay đổi giao diện Rewards, cần kiểm tra lại bộ nhận diện nút trong `empire-case-opener.ts`.
 
