@@ -89,8 +89,16 @@ describe('Postgres: auto trade', () => {
       id: 'a2',
       label: 'Empire',
       enabled: false,
-      config: { venue: 'csgoempire', browserProfile: 'empire-1' },
+      config: {
+        venue: 'csgoempire',
+        browserProfile: 'empire-1',
+        autoDailyCase: true,
+        autoBonusCases: true,
+      },
       secretCipher: null,
+    });
+    expect(await accounts.get('a2')).toMatchObject({
+      config: { autoDailyCase: true, autoBonusCases: true },
     });
     expect(await accounts.get('a1')).toMatchObject({
       config: { venue: 'polymarket', funderAddress: null },

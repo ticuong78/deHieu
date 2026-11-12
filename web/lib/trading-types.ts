@@ -32,6 +32,8 @@ export interface TradingAccountView {
   hasRelayerKey?: boolean;
   /** Đã lưu private key (mã hóa) hay chưa. Key không bao giờ được trả về. */
   hasSecret: boolean;
+  /** csgoempire: tên đăng nhập đã lưu; không trả về mật khẩu. */
+  loginUsername?: string | null;
   usedBy: string[];
 }
 
@@ -279,7 +281,10 @@ export interface TradeDetail {
     csgoempireMs: number | null;
     gapMs: number | null;
     /** Chuẩn bị từng sàn (song song): tổng + từng bước (ms). */
-    prepare?: Record<string, { totalMs: number; steps: Record<string, number> }> | null;
+    prepare?: Record<
+      string,
+      { totalMs: number; steps: Record<string, number> }
+    > | null;
   };
   signalAgeMs?: number;
   targetStake?: number | null;
@@ -549,7 +554,11 @@ export interface RebalanceSuggestion {
   updatedAt: number;
   triggers: number;
   balances: { csgoempire: number; polymarket: number };
-  shortages: { venue: 'csgoempire' | 'polymarket'; available: number; required: number }[];
+  shortages: {
+    venue: 'csgoempire' | 'polymarket';
+    available: number;
+    required: number;
+  }[];
   plan: RebalancePlan | null;
   helpsShortage: boolean;
   /** transfer = chuyển vào thêm được lệnh; insufficient = tổng < một lệnh nhỏ nhất; none = chuyển không vào thêm lệnh; ratio = chỉ theo tỉ lệ. */

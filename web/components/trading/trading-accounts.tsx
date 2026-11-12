@@ -307,8 +307,12 @@ function AccountForm({
     setBrowserProfile(
       e?.config.venue === 'csgoempire' ? e.config.browserProfile : '',
     );
-    setAutoDailyCase(e?.config.venue === 'csgoempire' && e.config.autoDailyCase === true);
-    setAutoBonusCases(e?.config.venue === 'csgoempire' && e.config.autoBonusCases === true);
+    setAutoDailyCase(
+      e?.config.venue === 'csgoempire' && e.config.autoDailyCase === true,
+    );
+    setAutoBonusCases(
+      e?.config.venue === 'csgoempire' && e.config.autoBonusCases === true,
+    );
     setWalletAddress(
       e?.config.venue === 'polymarket' ? e.config.walletAddress : '',
     );
@@ -323,7 +327,9 @@ function AccountForm({
         : '',
     );
     setPrivateKey('');
-    setLoginUsername('');
+    setLoginUsername(
+      e?.config.venue === 'csgoempire' ? (e.loginUsername ?? '') : '',
+    );
     setLoginPassword('');
   }, [value]);
 
@@ -373,14 +379,21 @@ function AccountForm({
     venue !== 'polymarket' ||
     !privateKey.trim() ||
     /^(0x)?[0-9a-fA-F]{64}$/.test(privateKey.trim());
+  const savedLoginUsername = editing?.loginUsername?.trim() ?? '';
+  const loginUser = loginUsername.trim();
+  const replacingLogin =
+    !!loginPassword ||
+    (!!editing?.hasSecret
+      ? loginUser.toLowerCase() !== savedLoginUsername.toLowerCase()
+      : !!loginUser);
   const missing =
     !label.trim() ||
     (venue === 'csgoempire'
       ? !/^[\w.-]{1,64}$/.test(browserProfile.trim()) ||
-        !!loginUsername.trim() !== !!loginPassword ||
+        (replacingLogin && (!loginUser || !loginPassword)) ||
         ((autoDailyCase || autoBonusCases) &&
           !editing?.hasSecret &&
-          !(loginUsername.trim() && loginPassword)) ||
+          !(loginUser && loginPassword)) ||
         (!!loginPassword && secretKeyConfigured === false) ||
         !!depositErr
       : !!depositErr ||
@@ -430,8 +443,8 @@ function AccountForm({
           ...(venue === 'polymarket' && relayerKey.trim()
             ? { relayerApiKey: relayerKey.trim() }
             : {}),
-          ...(venue === 'csgoempire' && loginUsername.trim() && loginPassword
-            ? { loginUsername: loginUsername.trim(), loginPassword }
+          ...(venue === 'csgoempire' && replacingLogin
+            ? { loginUsername: loginUser, loginPassword }
             : {}),
         },
       },
@@ -523,21 +536,33 @@ function AccountForm({
             <div className="space-y-3 rounded-lg border border-line p-3">
               <p className="text-body font-medium">Tự mở rương thưởng</p>
               <label className="flex items-center gap-3 text-sm">
-                <Switch checked={autoDailyCase} onCheckedChange={setAutoDailyCase} label="Tự mở Daily Case mức Medium" />
+                <Switch
+                  checked={autoDailyCase}
+                  onCheckedChange={setAutoDailyCase}
+                  label="Tự mở Daily Case mức Medium"
+                />
                 Daily Case · Medium · mỗi khi sàn cho mở
               </label>
               <label className="flex items-center gap-3 text-sm">
-                <Switch checked={autoBonusCases} onCheckedChange={setAutoBonusCases} label="Tự mở Bonus Cases" />
+                <Switch
+                  checked={autoBonusCases}
+                  onCheckedChange={setAutoBonusCases}
+                  label="Tự mở Bonus Cases"
+                />
                 Bonus Cases · các rương đã mở khóa và có key
               </label>
-              <p className="text-caption text-muted-fg">Cần lưu email và mật khẩu đăng nhập để kiểm tra đúng tài khoản. Phần thưởng giữ trong tài khoản; chỉ mở khi nút Open trên trang Rewards khả dụng.</p>
+              <p className="text-caption text-muted-fg">
+                Cần lưu email và mật khẩu đăng nhập để kiểm tra đúng tài khoản.
+                Phần thưởng giữ trong tài khoản; chỉ mở khi nút Open trên trang
+                Rewards khả dụng.
+              </p>
             </div>
             <Field
               label="Email đăng nhập"
               htmlFor="ac-login-user"
               help={
                 editing?.hasSecret
-                  ? 'Đã lưu thông tin mã hóa. Để trống cả hai ô để giữ; nhập cả hai để thay.'
+                  ? 'Tên đăng nhập đã lưu. Giữ nguyên để dùng tiếp; đổi tên đăng nhập thì nhập cả mật khẩu.'
                   : 'Nhập tài khoản/email dùng cho form đăng nhập csgoempire.'
               }
             >
@@ -552,7 +577,11 @@ function AccountForm({
             <Field
               label="Mật khẩu đăng nhập"
               htmlFor="ac-login-password"
-              help="Mã hóa AES-256-GCM bằng TRADING_SECRET_KEY trước khi lưu. App gõ vào Chromium khi cần đăng nhập."
+              help={
+                editing?.hasSecret
+                  ? 'Mật khẩu đã lưu và mã hóa. Để trống để giữ; nhập mật khẩu mới để thay.'
+                  : 'Mã hóa AES-256-GCM bằng TRADING_SECRET_KEY trước khi lưu. App gõ vào Chromium khi cần đăng nhập.'
+              }
               error={
                 secretKeyConfigured === false && loginPassword
                   ? 'Backend chưa đặt TRADING_SECRET_KEY.'
@@ -564,6 +593,9 @@ function AccountForm({
                 type="password"
                 autoComplete="new-password"
                 value={loginPassword}
+                placeholder={
+                  editing?.hasSecret ? 'Đã lưu · để trống để giữ' : undefined
+                }
                 onChange={(e) => setLoginPassword(e.target.value)}
                 maxLength={500}
               />

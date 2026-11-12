@@ -66,6 +66,8 @@ export interface TradingAccountView {
   readonly enabled: boolean;
   readonly config: TradingAccountConfig;
   readonly hasSecret: boolean;
+  /** csgoempire: tên đăng nhập đã lưu; mật khẩu không bao giờ trả về. */
+  readonly loginUsername: string | null;
   /** polymarket: đã lưu Relayer API Key (mã hóa) chưa. */
   readonly hasRelayerKey: boolean;
   /** Profile đang dùng tài khoản này. */
@@ -488,6 +490,7 @@ export class TradingAdmin {
           ? (({ relayerApiKeyCipher: _c, ...rest }) => rest)(a.config)
           : a.config,
       hasSecret: a.secretCipher !== null,
+      loginUsername: a.config.venue === 'csgoempire' ? this._loginOf(a) : null,
       hasRelayerKey:
         a.config.venue === 'polymarket' && !!a.config.relayerApiKeyCipher,
       usedBy: profiles

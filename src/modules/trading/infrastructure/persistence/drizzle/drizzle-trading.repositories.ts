@@ -85,6 +85,8 @@ const toAccount = (r: AccountRow): TradingAccount | null => {
     config = {
       venue: 'csgoempire',
       browserProfile: str(c.browserProfile),
+      autoDailyCase: c.autoDailyCase === true,
+      autoBonusCases: c.autoBonusCases === true,
       usdtDepositAddress:
         typeof c.usdtDepositAddress === 'string' ? c.usdtDepositAddress : null,
     };

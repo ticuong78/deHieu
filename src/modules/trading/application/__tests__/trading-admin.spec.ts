@@ -258,7 +258,7 @@ describe('TradingAdmin + TraderConfigSync', () => {
     });
   });
 
-  it('encrypts csgoempire credentials, never returns them, and retains them on an ordinary edit', async () => {
+  it('giữ mật khẩu mã hóa, trả tên đăng nhập để sửa và giữ key khi chỉ đổi cấu hình', async () => {
     const result = await admin.saveAccount(null, {
       label: 'Auto login',
       enabled: true,
@@ -268,9 +268,8 @@ describe('TradingAdmin + TraderConfigSync', () => {
     });
     if (result.status !== 'SUCEED') throw new Error('setup');
     expect(result.data.hasSecret).toBe(true);
-    expect(JSON.stringify(result.data)).not.toMatch(
-      /saved-user|password with spaces/,
-    );
+    expect(result.data.loginUsername).toBe('saved-user');
+    expect(JSON.stringify(result.data)).not.toContain('password with spaces');
     const encrypted = accounts.rows.get(result.data.id)?.secretCipher;
     expect(encrypted).toBe(
       'enc({"username":"saved-user","password":" password with spaces "})',
@@ -281,8 +280,11 @@ describe('TradingAdmin + TraderConfigSync', () => {
       config: result.data.config,
     });
     expect(accounts.rows.get(result.data.id)?.secretCipher).toBe(encrypted);
-    expect(JSON.stringify(await admin.listAccounts())).not.toMatch(
-      /saved-user|password with spaces/,
+    expect(await admin.listAccounts()).toContainEqual(
+      expect.objectContaining({ loginUsername: 'saved-user' }),
+    );
+    expect(JSON.stringify(await admin.listAccounts())).not.toContain(
+      'password with spaces',
     );
   });
 
