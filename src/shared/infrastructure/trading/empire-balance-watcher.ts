@@ -228,11 +228,40 @@ export class EmpireBalanceWatcher {
     }
   }
 
+  /** Chạy thao tác UI trên tab riêng trong cùng hồ sơ; không điều hướng tab đọc số dư. */
+  async withPage<T>(profile: string, fn: (page: Page) => Promise<T>): Promise<T> {
+    const w = this.entry(profile);
+    w.wantedUntil = Math.max(w.wantedUntil, Date.now() + this.idleMs);
+    this.start();
+    const run = async () => {
+      if (w.paused) throw new Error('CSGOEMPIRE_LOGIN_IN_PROGRESS');
+      await w.reading?.catch(() => undefined);
+      await this.ensurePage(profile, w);
+      const context = w.context;
+      if (!context) throw new Error('CSGOEMPIRE_BROWSER_UNAVAILABLE');
+      const page = await context.newPage();
+      try {
+        return await fn(page);
+      } finally {
+        await page.close().catch(() => undefined);
+      }
+    };
+    const prev = w.calling ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(run);
+    w.calling = next;
+    try {
+      return await next;
+    } finally {
+      if (w.calling === next) w.calling = null;
+    }
+  }
+
   /** Nhường hồ sơ (làm mới phiên / đăng nhập sắp mở Chrome trên hồ sơ này). */
   async pause(profile: string) {
     const w = this.watched.get(profile);
     if (!w) return;
     w.paused++;
+    await w.calling?.catch(() => undefined);
     await w.reading?.catch(() => undefined);
     await this.closeBrowser(profile, w);
   }
@@ -332,7 +361,7 @@ export class EmpireBalanceWatcher {
 
   private async tick(profile: string) {
     const w = this.watched.get(profile);
-    if (!w || w.paused || w.reading) return;
+    if (!w || w.paused || w.reading || w.calling) return;
     if (w.wantedUntil > Date.now() && Date.now() < w.nextAt) return; // đang giãn nhịp vì lỗi
     if (w.wantedUntil <= Date.now()) {
       // không còn profile chạy thật nào dùng: đóng Chrome cho nhẹ máy

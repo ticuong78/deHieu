@@ -15,6 +15,7 @@ import type {
   RebalanceGateway,
 } from '../../application/rebalance-executor.js';
 import { EmpireBalanceWatcher } from '../../../../shared/infrastructure/trading/empire-balance-watcher.js';
+import { EmpireCaseOpener } from '../../../../shared/infrastructure/trading/empire-case-opener.js';
 import type {
   EmpireCredentials,
   EmpireLoginStatus,
@@ -59,6 +60,7 @@ export class LiveConfigProvider
   private readonly sessions: EmpireSessions | null;
   /** Chrome nền đọc số dư csgoempire vào Redis (worker vào lệnh đọc ở đó). */
   private readonly balances: EmpireBalanceWatcher | null;
+  private readonly caseOpener = new EmpireCaseOpener();
   constructor() {
     this.locks = process.env.REDIS_URL
       ? new AccountLock(process.env.REDIS_URL)
@@ -424,6 +426,37 @@ export class LiveConfigProvider
             : null,
       checkedAt: Date.now(),
     };
+  }
+
+  /** Mở các rương thưởng đã đến hạn, trên đúng hồ sơ tài khoản đã lưu. */
+  async openRewardCases(account: TradingAccount): Promise<string[]> {
+    if (account.config.venue !== 'csgoempire' || !account.enabled)
+      return [];
+    const { autoDailyCase, autoBonusCases, browserProfile } = account.config;
+    if (!autoDailyCase && !autoBonusCases) return [];
+    if (!this.sessions || !this.balances || !this.locks)
+      throw new Error('LIVE_REDIS_REQUIRED');
+    if (!process.env.TRADING_SECRET_KEY)
+      throw new Error('TRADING_SECRET_KEY_REQUIRED');
+    const credentials = this.credentials(account);
+    if (!credentials)
+      throw new Error('CSGOEMPIRE_LOGIN_CREDENTIALS_REQUIRED');
+    await this.sessions.get(browserProfile, {
+      credentials,
+      credentialsVersion: this.version(account),
+    });
+    // Kiểm tra tài khoản trước khi bấm bất cứ nút Open nào.
+    await this.balances.readNow(browserProfile, credentials?.username ?? null);
+    return this.locks.with(
+      [accountResource('csgoempire', browserProfile)],
+      () =>
+        this.balances!.withPage(browserProfile, (page) =>
+          this.caseOpener.open(page, {
+            daily: autoDailyCase === true,
+            bonus: autoBonusCases === true,
+          }),
+        ),
+    );
   }
   // ------------------------------------------------------------- tự chuyển tiền (RebalanceGateway)
 

@@ -7,6 +7,8 @@ export type TradingAccountConfig =
   | {
       venue: 'csgoempire';
       browserProfile: string;
+      autoDailyCase?: boolean;
+      autoBonusCases?: boolean;
       /** Địa chỉ nạp USDT Polygon csgoempire đã xác nhận (tự chuyển Polymarket → csgoempire). */
       usdtDepositAddress?: string | null;
     }

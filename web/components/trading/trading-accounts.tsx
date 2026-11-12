@@ -122,6 +122,10 @@ export function TradingAccounts({
                   </span>
                 </span>
                 {!a.enabled ? <Pill tone="muted">Tắt</Pill> : null}
+                {a.config.venue === 'csgoempire' &&
+                (a.config.autoDailyCase || a.config.autoBonusCases) ? (
+                  <Pill tone="ok">Tự mở rương</Pill>
+                ) : null}
               </span>
               <span className="flex w-full flex-wrap items-center gap-1.5 md:w-64">
                 {a.venue === 'polymarket' ? (
@@ -276,6 +280,8 @@ function AccountForm({
   const [label, setLabel] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [browserProfile, setBrowserProfile] = useState('');
+  const [autoDailyCase, setAutoDailyCase] = useState(false);
+  const [autoBonusCases, setAutoBonusCases] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
   const [funderAddress, setFunderAddress] = useState('');
   const [depositAddress, setDepositAddress] = useState('');
@@ -301,6 +307,8 @@ function AccountForm({
     setBrowserProfile(
       e?.config.venue === 'csgoempire' ? e.config.browserProfile : '',
     );
+    setAutoDailyCase(e?.config.venue === 'csgoempire' && e.config.autoDailyCase === true);
+    setAutoBonusCases(e?.config.venue === 'csgoempire' && e.config.autoBonusCases === true);
     setWalletAddress(
       e?.config.venue === 'polymarket' ? e.config.walletAddress : '',
     );
@@ -370,6 +378,9 @@ function AccountForm({
     (venue === 'csgoempire'
       ? !/^[\w.-]{1,64}$/.test(browserProfile.trim()) ||
         !!loginUsername.trim() !== !!loginPassword ||
+        ((autoDailyCase || autoBonusCases) &&
+          !editing?.hasSecret &&
+          !(loginUsername.trim() && loginPassword)) ||
         (!!loginPassword && secretKeyConfigured === false) ||
         !!depositErr
       : !!depositErr ||
@@ -384,6 +395,8 @@ function AccountForm({
         ? {
             venue,
             browserProfile: browserProfile.trim(),
+            autoDailyCase,
+            autoBonusCases,
             usdtDepositAddress: depositAddress.trim()
               ? addr(depositAddress)
               : null,
@@ -507,6 +520,18 @@ function AccountForm({
                 maxLength={64}
               />
             </Field>
+            <div className="space-y-3 rounded-lg border border-line p-3">
+              <p className="text-body font-medium">Tự mở rương thưởng</p>
+              <label className="flex items-center gap-3 text-sm">
+                <Switch checked={autoDailyCase} onCheckedChange={setAutoDailyCase} label="Tự mở Daily Case mức Medium" />
+                Daily Case · Medium · mỗi khi sàn cho mở
+              </label>
+              <label className="flex items-center gap-3 text-sm">
+                <Switch checked={autoBonusCases} onCheckedChange={setAutoBonusCases} label="Tự mở Bonus Cases" />
+                Bonus Cases · các rương đã mở khóa và có key
+              </label>
+              <p className="text-caption text-muted-fg">Cần lưu email và mật khẩu đăng nhập để kiểm tra đúng tài khoản. Phần thưởng giữ trong tài khoản; chỉ mở khi nút Open trên trang Rewards khả dụng.</p>
+            </div>
             <Field
               label="Email đăng nhập"
               htmlFor="ac-login-user"

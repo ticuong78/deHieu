@@ -102,6 +102,7 @@ const CONFIG_RECONCILE_MS = 30_000;
 const SETTLEMENT_MS = 10 * 60_000;
 /** Nhịp gỡ kèo On click đã hết hạn (ghi lịch sử). */
 const ONE_CLICK_SWEEP_MS = 10_000;
+const EMPIRE_CASE_CHECK_MS = 5 * 60_000;
 
 /**
  * Auto trade. Worker trader (task `trader.arbitrage`) là một consumer của ConsumerHub;
@@ -472,6 +473,9 @@ export class TradingModule implements OnModuleInit, OnApplicationShutdown {
   private _reconcile: ReturnType<typeof setInterval> | null = null;
   private _sweep: ReturnType<typeof setInterval> | null = null;
   private _settle: ReturnType<typeof setInterval> | null = null;
+  private _cases: ReturnType<typeof setInterval> | null = null;
+  private _caseStart: ReturnType<typeof setTimeout> | null = null;
+  private _openingCases = false;
   /** Lượt đối chiếu cấu hình đang chạy (lượt chậm vì mở Chrome thì nhịp sau bỏ qua, không chồng lên). */
   private _reconciling: Promise<unknown> | null = null;
 
@@ -485,6 +489,8 @@ export class TradingModule implements OnModuleInit, OnApplicationShutdown {
     @Inject(SettlementAdmin) private readonly _settlement: SettlementAdmin,
     @Inject(LiveConfigProvider) private readonly _live: LiveConfigProvider,
     @Inject(ReconcileAlerts) private readonly _alerts: ReconcileAlerts,
+    @Inject(TRADING_ACCOUNT_REPOSITORY)
+    private readonly _accounts: TradingAccountRepository,
   ) {}
 
   async onModuleInit() {
@@ -553,11 +559,42 @@ export class TradingModule implements OnModuleInit, OnApplicationShutdown {
           this._reconciling = null;
         });
     }, CONFIG_RECONCILE_MS);
+    const openCases = async () => {
+      if (this._openingCases) return;
+      this._openingCases = true;
+      try {
+        const accounts = await this._accounts.list();
+        for (const account of accounts) {
+          if (
+            !account.enabled ||
+            account.config.venue !== 'csgoempire' ||
+            (!account.config.autoDailyCase && !account.config.autoBonusCases)
+          ) continue;
+          try {
+            const opened = await this._live.openRewardCases(account);
+            if (opened.length)
+              this._logger.log(`${account.label}: đã bấm mở ${opened.join(', ')}`);
+          } catch (error) {
+            this._logger.warn(`${account.label}: kiểm tra rương thưởng lỗi — ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      } catch (error) {
+        this._logger.warn(`kiểm tra rương thưởng lỗi — ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        this._openingCases = false;
+      }
+    };
+    this._cases = setInterval(() => void openCases(), EMPIRE_CASE_CHECK_MS);
+    this._cases.unref();
+    this._caseStart = setTimeout(() => void openCases(), 45_000);
+    this._caseStart.unref();
   }
 
   onApplicationShutdown() {
     if (this._reconcile) clearInterval(this._reconcile);
     if (this._sweep) clearInterval(this._sweep);
     if (this._settle) clearInterval(this._settle);
+    if (this._cases) clearInterval(this._cases);
+    if (this._caseStart) clearTimeout(this._caseStart);
   }
 }

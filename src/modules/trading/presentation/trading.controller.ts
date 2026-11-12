@@ -63,6 +63,8 @@ const AccountBody = z.object({
     z.object({
       venue: z.literal('csgoempire'),
       browserProfile: z.string().trim().min(1).max(64),
+      autoDailyCase: z.boolean().default(false),
+      autoBonusCases: z.boolean().default(false),
       /** Địa chỉ nạp USDT Polygon của csgoempire đã xác nhận (tự chuyển Polymarket → csgoempire). */
       usdtDepositAddress: evmAddress.nullish().transform((v) => v || null),
     }),

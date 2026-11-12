@@ -22,6 +22,10 @@ export interface CsgoEmpireAccountConfig {
    * csgoempire lúc chuyển vẫn trả đúng địa chỉ đó. null = chưa xác nhận → không tự chuyển chiều này.
    */
   readonly usdtDepositAddress?: string | null;
+  /** Tự mở Daily Case mức Medium khi trang Rewards cho phép. */
+  readonly autoDailyCase?: boolean;
+  /** Tự mở các Bonus Case đã mở khóa, có key và hết thời gian chờ. */
+  readonly autoBonusCases?: boolean;
 }
 
 export interface PolymarketAccountConfig {
