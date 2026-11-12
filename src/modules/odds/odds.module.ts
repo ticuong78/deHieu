@@ -470,9 +470,12 @@ const EXPIRE_INTERVAL_MS = 60_000;
     },
     {
       provide: ListMatchesHandler,
-      inject: [ODDS_ROOM_STORE, ARBITRAGE_SETTINGS_STORE],
-      useFactory: (r: OddsRoomStore, s: ArbitrageSettingsStore) =>
-        new ListMatchesHandler(r, s),
+      inject: [ODDS_ROOM_STORE, ARBITRAGE_SETTINGS_STORE, TeamNameResolver],
+      useFactory: (
+        r: OddsRoomStore,
+        s: ArbitrageSettingsStore,
+        teams: TeamNameResolver,
+      ) => new ListMatchesHandler(r, s, teams),
     },
     {
       provide: GetMatchHandler,

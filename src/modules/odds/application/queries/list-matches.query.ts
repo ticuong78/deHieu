@@ -8,6 +8,7 @@ import {
 } from '../../domain/match-candidates.js';
 import type { ArbitrageSettingsStore } from '../arbitrage-settings.js';
 import type { OddsRoomStore } from '../odds-room.store.js';
+import type { TeamNameResolver } from '../team-name.resolver.js';
 
 export interface ListMatchesQuery {
   readonly q?: string;
@@ -60,6 +61,7 @@ export class ListMatchesHandler implements QueryHandler<
   constructor(
     private readonly _rooms: OddsRoomStore,
     private readonly _settings: ArbitrageSettingsStore,
+    private readonly _teams: TeamNameResolver,
   ) {}
 
   async execute(q: ListMatchesQuery): Promise<ListMatchesResult> {
@@ -109,7 +111,15 @@ export class ListMatchesHandler implements QueryHandler<
     return findMatchCandidates(summaries, {
       maxStartDriftMs: settings.maxStartDriftMs,
       minScore: q.minScore,
-    }).slice(0, q.limit);
+    })
+      .map((candidate) => ({
+        ...candidate,
+        aliases: candidate.aliases.filter(
+          (suggestion) => !this._teams.hasAlias(suggestion.alias),
+        ),
+      }))
+      .filter((candidate) => candidate.aliases.length > 0)
+      .slice(0, q.limit);
   }
 }
 

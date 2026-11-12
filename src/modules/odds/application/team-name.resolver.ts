@@ -23,4 +23,8 @@ export class TeamNameResolver {
     const n = normalizeTeamName(raw);
     return this._aliases.get(n) ?? n;
   }
+
+  hasAlias(raw: string): boolean {
+    return this._aliases.has(normalizeTeamName(raw));
+  }
 }

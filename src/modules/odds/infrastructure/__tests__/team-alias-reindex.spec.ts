@@ -153,7 +153,7 @@ async function setup(sync?: SyncAssets) {
   const create = new CreateTeamAliasHandler(repo, teams, reindex);
   const remove = new DeleteTeamAliasHandler(repo, teams, reindex);
   const release = new ReleaseTaskOddsHandler(router, lanes);
-  const list = new ListMatchesHandler(rooms, settings);
+  const list = new ListMatchesHandler(rooms, settings, teams);
   const detail = new GetMatchHandler(rooms, settings, () => NOW);
   const expire = new ExpireFinishedMatchesHandler(rooms, lanes, () => NOW);
   return {
@@ -257,6 +257,38 @@ describe('aliases applied to running feeds', () => {
       2.5, 1.8,
     ]);
     expect(await s.detail.execute({ match: 'cs2:alpha~beta' })).toBeNull();
+  });
+
+  it('một bí danh ghép đúng hai trận của cùng đội với hai đối thủ khác nhau', async () => {
+    const s = await setup();
+    const first = sptpub('Bodo Glimt', 'Molde');
+    const second = sptpub('Bodo Glimt', 'LASK Linz');
+    await s.ingest.execute(
+      message('sptpub.prematch', {
+        ...first,
+        events: { E: first.events.E, F: second.events.E },
+      }),
+    );
+    const polyFirst = polymarket('FK Bodo Glimt', 'Molde')[0];
+    const polySecond = polymarket('FK Bodo Glimt', 'LASK Linz')[0];
+    polySecond.id = 'Q';
+    polySecond.markets.forEach((market, index) => {
+      market.conditionId = `D${index}`;
+      market.slug = `second-market-${index}`;
+    });
+    await s.ingest.execute(
+      message('polymarket.descriptor', [polyFirst, polySecond]),
+    );
+    expect((await s.list.execute({ limit: 50, offset: 0 })).total).toBe(4);
+    const saved = await s.create.execute({
+      alias: 'Bodo Glimt',
+      canonical: 'FK Bodo Glimt',
+    });
+    expect(saved.status).toBe('SUCEED');
+    const after = (await s.list.execute({ limit: 50, offset: 0 })).items;
+    expect(after).toHaveLength(2);
+    expect(after.every((match) => match.matchedMarkets === 4)).toBe(true);
+    expect(await s.list.candidates({ limit: 50, minScore: 0.8 })).toEqual([]);
   });
 
   it('rekeys Polymarket prices and token sides, including later stream and descriptor messages', async () => {

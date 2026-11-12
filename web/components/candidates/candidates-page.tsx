@@ -68,6 +68,7 @@ export function CandidatesPage() {
   const aliasWriteReason = useGuard('team-aliases:write');
   const mutate = useMutate();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [resolvedAliases, setResolvedAliases] = useState<Set<string>>(new Set());
   const qs = new URLSearchParams({ minScore, limit: '50' });
   if (sport) qs.set('sport', sport);
   const { data, error, reload, updatedAt } = useApi<MatchCandidate[]>(`arbitrage/match-candidates?${qs}`, 15_000);
@@ -90,7 +91,10 @@ export function CandidatesPage() {
     setSelected(null);
   };
 
-  const list = useMemo(() => (data ?? []).filter((c) => !dismissed.has(cid(c))), [data, dismissed]);
+  const list = useMemo(() => (data ?? [])
+    .filter((c) => !dismissed.has(cid(c)))
+    .map((c) => ({ ...c, aliases: c.aliases.filter((a) => !resolvedAliases.has(a.alias)) }))
+    .filter((c) => c.aliases.length > 0), [data, dismissed, resolvedAliases]);
   const suggestions = useMemo(() => uniqueSuggestions(list), [list]);
   const eligible = suggestions.filter((s) => !s.conflict);
   const selectedSuggestions = eligible.filter((s) => picked.has(s.alias));
@@ -107,6 +111,7 @@ export function CandidatesPage() {
     });
     setBulkBusy(false);
     if (!result) return;
+    setResolvedAliases((previous) => new Set([...previous, ...result.created.map((item) => item.alias), ...result.unchanged]));
     if (result.failed.length) {
       toast.error(`Đã tạo ${result.created.length}, lỗi ${result.failed.length} bí danh`, {
         description: result.failed.slice(0, 3).map((f) => `${f.alias}: ${f.reason}`).join('; '),
@@ -117,6 +122,11 @@ export function CandidatesPage() {
       setPicked(new Set());
       setBulkOpen(false);
     }
+    void reload();
+  };
+  const aliasDone = (alias: string) => {
+    setResolvedAliases((previous) => new Set(previous).add(alias));
+    setSelected(null);
     void reload();
   };
   const current = list.find((c) => cid(c) === selected) ?? (mobile ? null : list[0]) ?? null;
@@ -235,20 +245,20 @@ export function CandidatesPage() {
           </ul>
 
           {/* chi tiết */}
-          {!mobile && current ? <CandidateView c={current} onDismiss={() => dismiss(current)} onDone={() => { setSelected(null); void reload(); }} /> : null}
+          {!mobile && current ? <CandidateView c={current} onDismiss={() => dismiss(current)} onDone={aliasDone} /> : null}
         </div>
       ) : null}
 
       {mobile ? (
         <Panel open={!!selected && !!current} onOpenChange={(v) => !v && setSelected(null)} title="Cặp nghi ghép trượt">
-          {current ? <CandidateView c={current} onDismiss={() => dismiss(current)} onDone={() => { setSelected(null); void reload(); }} /> : null}
+          {current ? <CandidateView c={current} onDismiss={() => dismiss(current)} onDone={aliasDone} /> : null}
         </Panel>
       ) : null}
     </div>
   );
 }
 
-function CandidateView({ c, onDismiss, onDone }: { c: MatchCandidate; onDismiss: () => void; onDone: () => void }) {
+function CandidateView({ c, onDismiss, onDone }: { c: MatchCandidate; onDismiss: () => void; onDone: (alias: string) => void }) {
   const mobile = useIsMobile();
   return (
     <div className="min-w-0 animate-fade-in">
@@ -339,7 +349,7 @@ function Side({ label, side }: { label: string; side: MatchCandidate['a'] }) {
   );
 }
 
-function AliasRow({ c, a, onDone }: { c: MatchCandidate; a: MatchCandidate['aliases'][number]; onDone: () => void }) {
+function AliasRow({ c, a, onDone }: { c: MatchCandidate; a: MatchCandidate['aliases'][number]; onDone: (alias: string) => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const reason = useGuard('team-aliases:write');
@@ -362,7 +372,7 @@ function AliasRow({ c, a, onDone }: { c: MatchCandidate; a: MatchCandidate['alia
         open={open}
         onOpenChange={setOpen}
         title="Tạo bí danh đội?"
-        description="Áp dụng tên chuẩn cho dữ liệu mới và ghép lại các dòng đang chạy."
+        description="Bí danh áp dụng cho mọi trận có tên đội này. Cặp còn tên đội khác chưa khớp sẽ tiếp tục hiển thị."
         confirmLabel="Tạo bí danh"
         loading={busy}
         onConfirm={async () => {
@@ -371,7 +381,7 @@ function AliasRow({ c, a, onDone }: { c: MatchCandidate; a: MatchCandidate['alia
           setBusy(false);
           if (r) {
             setOpen(false);
-            onDone();
+            onDone(a.alias);
           }
         }}
       >

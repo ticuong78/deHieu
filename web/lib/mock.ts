@@ -503,7 +503,8 @@ function candidates(search: string): MatchCandidate[] {
   return list
     .filter((c) => c.score >= min)
     .filter((c) => !q.get('sport') || c.a.match.startsWith(`${q.get('sport')}:`))
-    .filter((c) => !c.aliases.every((a) => known.has(a.alias)))
+    .map((c) => ({ ...c, aliases: c.aliases.filter((a) => !known.has(a.alias)) }))
+    .filter((c) => c.aliases.length > 0)
     .sort((a, b) => b.score - a.score);
 }
 

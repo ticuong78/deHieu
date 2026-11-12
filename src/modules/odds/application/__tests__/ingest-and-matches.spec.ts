@@ -5,6 +5,7 @@ import type { LaneDispatcher } from '../lane-dispatcher.js';
 import type { TaskDataMessage } from '../../../tasks/application/task-protocol.js';
 import { TeamNameResolver } from '../team-name.resolver.js';
 import type { TeamAliasRepository } from '../../domain/team-alias.repository.js';
+import { TeamAlias } from '../../domain/team-alias.js';
 import { SptPubOddsTranslator } from '../../infrastructure/acl/sptpub/sptpub-odds.translator.js';
 import { InMemoryOddsRoomStore } from '../../infrastructure/persistence/in-memory/in-memory-odds-room.store.js';
 import { InMemoryArbitrageSettingsStore } from '../../infrastructure/settings/in-memory-arbitrage-settings.store.js';
@@ -77,7 +78,7 @@ describe('IngestStats + IngestTaskDataHandler', () => {
             desc: {
               scheduled: 1,
               type: 'match',
-              sport: '5', // tennis
+              sport: '999999', // môn không hỗ trợ
               competitors: [
                 { id: 'a', name: 'X' },
                 { id: 'b', name: 'Y' },
@@ -148,7 +149,7 @@ describe('ListMatchesHandler / GetMatchHandler', () => {
       line('polymarket', [1.6, 2.4], 60_000),
     );
     return {
-      list: new ListMatchesHandler(rooms, settings),
+      list: new ListMatchesHandler(rooms, settings, teams),
       get: new GetMatchHandler(rooms, settings, () => 10),
     };
   };
@@ -196,5 +197,44 @@ describe('ListMatchesHandler / GetMatchHandler', () => {
     expect(c?.aliases).toEqual([
       { alias: 'inf', canonical: 'infurity', similarity: 0.8 },
     ]);
+  });
+
+  it('một bí danh đã lưu biến mất ở cả hai trận có đối thủ khác nhau', async () => {
+    const rooms = new InMemoryOddsRoomStore();
+    const settings = new InMemoryArbitrageSettingsStore();
+    const saved = [
+      TeamAlias.create({
+        id: 'bodo',
+        alias: 'bodoeglimt',
+        canonical: 'fkbodoglimt',
+      }),
+    ];
+    let active = false;
+    const aliases = new TeamNameResolver({
+      ...repo,
+      findAll: () =>
+        Promise.resolve({ status: 'SUCEED', data: active ? saved : [] }),
+    });
+    await aliases.reload();
+    for (const opponent of ['molde', 'lasklinz']) {
+      await rooms.setLine(
+        key('bodoeglimt', opponent, 'game-winner'),
+        line('sptpub', [2, 2]),
+      );
+      await rooms.setLine(
+        key('fkbodoglimt', opponent, 'game-winner'),
+        line('polymarket', [2, 2]),
+      );
+    }
+    const list = new ListMatchesHandler(rooms, settings, aliases);
+    const query = { limit: 50, minScore: 0.8 };
+    const before = await list.candidates(query);
+    expect(before).toHaveLength(2);
+    expect(before.every((c) => c.aliases[0]?.alias === 'bodoeglimt')).toBe(
+      true,
+    );
+    active = true;
+    await aliases.reload();
+    expect(await list.candidates(query)).toEqual([]);
   });
 });
